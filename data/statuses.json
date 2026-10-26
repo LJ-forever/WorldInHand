@@ -1,0 +1,167 @@
+{
+  "statuses": [
+    {
+      "id": "bleeding",
+      "name": "流血",
+      "category": "debuff",
+      "duration": 3,
+      "max_duration": 3,
+      "effects": {
+        "hp_per_round": -1
+      },
+      "removable_by_potion": true,
+      "player_only": false,
+      "description": "每回合 -1 HP，持续 3 回合。",
+      "short": "每回合 -1 HP"
+    },
+    {
+      "id": "poisoned",
+      "name": "中毒",
+      "category": "debuff",
+      "duration": 3,
+      "max_duration": 3,
+      "effects": {
+        "hp_per_round": -1,
+        "scout_check_bonus": -1
+      },
+      "removable_by_potion": true,
+      "player_only": false,
+      "description": "每回合 -1 HP，侦察 -1；持续 3 回合。",
+      "short": "每回合 -1 HP，侦察 -1"
+    },
+    {
+      "id": "lost",
+      "name": "迷路",
+      "category": "debuff",
+      "duration": 1,
+      "max_duration": 1,
+      "effects": {
+        "ap_next_round": -2,
+        "ap_penalty_overflow_to_hp": true
+      },
+      "removable_by_potion": true,
+      "player_only": false,
+      "description": "下回合 AP -2，在掷骰后结算；不足转 HP。事件「迷路」的效果，不是 §6.4 迷路机制。",
+      "short": "下回合 AP -2"
+    },
+    {
+      "id": "lost_severe",
+      "name": "严重迷路",
+      "category": "debuff",
+      "duration": 1,
+      "max_duration": 1,
+      "effects": {
+        "ap_next_round": -4,
+        "ap_penalty_overflow_to_hp": true
+      },
+      "removable_by_potion": true,
+      "player_only": false,
+      "description": "下回合 AP -4，在掷骰后结算；不足转 HP。事件「迷路」大失败变体。",
+      "short": "下回合 AP -4"
+    },
+    {
+      "id": "trapped",
+      "name": "被困",
+      "category": "debuff",
+      "duration": 1,
+      "max_duration": 2,
+      "effects": {
+        "blocks_movement": true,
+        "blocks_goal": true,
+        "end_of_round_check": {
+          "attr": "stamina",
+          "dc": 10
+        }
+      },
+      "removable_by_potion": false,
+      "player_only": false,
+      "description": "无法绘制移动路径。回合结束体力检定 DC 10：成功解除；失败再持续 1 回合（最多 2 回合）。终点前被困无法进入终点。",
+      "short": "无法移动，需体力检定解除"
+    },
+    {
+      "id": "cursed",
+      "name": "被诅咒",
+      "category": "special",
+      "duration": -1,
+      "max_duration": null,
+      "effects": {
+        "luck": -2
+      },
+      "removable_by_potion": false,
+      "player_only": false,
+      "description": "幸运 -2，持续到本局结束；所有使用幸运的检定（偷窃、直觉、休息等）-2。药水无法解除。",
+      "short": "幸运 -2，药水无效"
+    },
+    {
+      "id": "cursed_minor",
+      "name": "轻度诅咒",
+      "category": "special",
+      "duration": -1,
+      "max_duration": null,
+      "effects": {
+        "luck": -1
+      },
+      "removable_by_potion": true,
+      "player_only": false,
+      "description": "幸运 -1，持续到本局结束；所有使用幸运的检定 -1。可被药水移除。",
+      "short": "幸运 -1，可用药水解除"
+    },
+    {
+      "id": "suspected",
+      "name": "被怀疑",
+      "category": "debuff",
+      "duration": -1,
+      "max_duration": null,
+      "effects": {
+        "negotiation": -1
+      },
+      "removable_by_potion": true,
+      "player_only": true,
+      "description": "交涉 -1，本局结束；可被药水移除。MVP 仅青蘅携带药水，其他角色无法移除。",
+      "short": "交涉 -1，可用药水解除"
+    },
+    {
+      "id": "hermit_blessing",
+      "name": "隐士祝福",
+      "category": "buff",
+      "duration": -1,
+      "max_duration": null,
+      "effects": {
+        "perception": 1
+      },
+      "removable_by_potion": false,
+      "player_only": false,
+      "description": "感知 +1，持续到本局结束；感知检定 +1，侦察揭示半径也会扩大。",
+      "short": "感知 +1，侦察更远"
+    },
+    {
+      "id": "immune",
+      "name": "免疫",
+      "category": "buff",
+      "duration": -1,
+      "max_duration": null,
+      "effects": {
+        "immune_terrain_negative": true
+      },
+      "removable_by_potion": false,
+      "player_only": false,
+      "description": "免疫对应地形负面效果（MVP 由词条直接实现，保留状态定义以兼容后续内容）。",
+      "short": "免疫地形负面"
+    },
+    {
+      "id": "burned",
+      "name": "烧伤",
+      "category": "debuff",
+      "duration": 2,
+      "max_duration": 2,
+      "effects": {
+        "hp_per_round": -1,
+        "combat": -1
+      },
+      "removable_by_potion": true,
+      "player_only": false,
+      "description": "战斗 -1，每回合 -1 HP；持续 2 回合。",
+      "short": "战斗 -1，每回合 -1 HP"
+    }
+  ]
+}

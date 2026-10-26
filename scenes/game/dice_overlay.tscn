@@ -1,0 +1,89 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/dice_overlay.gd" id="1_dice"]
+
+[node name="DiceOverlay" type="Control"]
+visible = false
+process_mode = 3
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_dice")
+
+[node name="Banner" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_top = 68.0
+offset_bottom = 190.0
+grow_horizontal = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 0
+theme_override_constants/margin_top = 0
+theme_override_constants/margin_right = 0
+theme_override_constants/margin_bottom = 0
+
+[node name="Center" type="CenterContainer" parent="Banner"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="Banner/Center"]
+custom_minimum_size = Vector2(620, 0)
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="Banner/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="Banner/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="Banner/Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="Banner/Center/Panel/Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.941176, 0.87451, 0.662745, 1)
+theme_override_font_sizes/font_size = 17
+text = "掷骰"
+
+[node name="TimerLabel" type="Label" parent="Banner/Center/Panel/Margin/VBox/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.560784, 0.760784, 0.858824, 1)
+theme_override_font_sizes/font_size = 12
+vertical_alignment = 1
+
+[node name="DiceRow" type="HBoxContainer" parent="Banner/Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="DiceBox" type="HBoxContainer" parent="Banner/Center/Panel/Margin/VBox/DiceRow"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="SummaryLabel" type="Label" parent="Banner/Center/Panel/Margin/VBox/DiceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.88, 0.85, 0.74, 1)
+theme_override_font_sizes/font_size = 15
+text = "掷骰中…"
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="DetailLabel" type="Label" parent="Banner/Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.65098, 0.627451, 0.552941, 1)
+theme_override_font_sizes/font_size = 12
+text = ""
+autowrap_mode = 3

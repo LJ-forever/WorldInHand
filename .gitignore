@@ -1,0 +1,12 @@
+# Godot 4
+.godot/
+export/
+builds/
+*.translation
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Local-only design document (not published)
+/桌游设计文档v1.1.16.docx

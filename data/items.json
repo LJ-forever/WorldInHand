@@ -1,0 +1,203 @@
+{
+  "items": [
+    {
+      "id": "supply",
+      "name": "补给",
+      "type": "consumable",
+      "rarity": "common",
+      "price": 5,
+      "stackable": true,
+      "max_stack": 99,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "use": "choose_hp_or_ap_1"
+      },
+      "description": "玩家选择恢复 1 HP 或 1 AP；AI 使用则恢复 HP。"
+    },
+    {
+      "id": "potion",
+      "name": "药水",
+      "type": "consumable",
+      "rarity": "uncommon",
+      "price": 15,
+      "stackable": true,
+      "max_stack": 9,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "use": "remove_one_negative_status",
+        "removable_status_ids": ["bleeding", "poisoned", "lost", "burned", "suspected", "cursed_minor"]
+      },
+      "description": "移除 1 个负面状态；可移除 suspected、cursed_minor。MVP 不能移除 trapped 与 cursed（临时裁定 T-08）。"
+    },
+    {
+      "id": "herb",
+      "name": "草药",
+      "type": "material",
+      "rarity": "common",
+      "price": 5,
+      "stackable": true,
+      "max_stack": 99,
+      "tradable": true,
+      "quest_item": false,
+      "ai_task_protected": true,
+      "mvp_available": true,
+      "effects": {},
+      "description": "可交易；青蘅任务物品；potion 的原料（P1）；不能直接恢复 HP。"
+    },
+    {
+      "id": "mount",
+      "name": "坐骑",
+      "type": "equipment",
+      "rarity": "rare",
+      "price": 30,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "ap_bonus": 1,
+        "ap_bonus_disabled_terrains": ["forest"]
+      },
+      "description": "AP +1，密林无效。"
+    },
+    {
+      "id": "bandit_blade",
+      "name": "马匪弯刀",
+      "type": "equipment",
+      "rarity": "uncommon",
+      "price": 20,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "combat": 1
+      },
+      "description": "战斗 +1。沙铠初始装备直接使用本物品。"
+    },
+    {
+      "id": "pelt",
+      "name": "兽皮",
+      "type": "material",
+      "rarity": "common",
+      "price": 10,
+      "stackable": true,
+      "max_stack": 99,
+      "tradable": true,
+      "quest_item": false,
+      "ai_task_protected": true,
+      "mvp_available": true,
+      "effects": {},
+      "description": "可交易（10 金币）；满足沙铠「可交易物品」任务。"
+    },
+    {
+      "id": "ancient_coin",
+      "name": "古币",
+      "type": "material",
+      "rarity": "common",
+      "price": 10,
+      "stackable": true,
+      "max_stack": 99,
+      "tradable": true,
+      "quest_item": false,
+      "ai_task_protected": true,
+      "mvp_available": true,
+      "effects": {},
+      "description": "可交易；MVP 商队不收购。"
+    },
+    {
+      "id": "relic",
+      "name": "遗物",
+      "type": "quest",
+      "rarity": "rare",
+      "price": null,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": false,
+      "quest_item": true,
+      "ai_task_protected": true,
+      "mvp_available": false,
+      "effects": {},
+      "description": "P1 启用；MVP 不可获得，终点守卫献祭不可消耗。"
+    },
+    {
+      "id": "rare_charm",
+      "name": "稀有护符",
+      "type": "equipment",
+      "rarity": "rare",
+      "price": 30,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": true,
+      "quest_item": false,
+      "ai_task_protected": true,
+      "mvp_available": true,
+      "effects": {
+        "luck_event": 1,
+        "max_equipped": 1
+      },
+      "description": "幸运 +1（仅影响事件随机，不影响重投次数派生）；每个角色最多装备 1 个；可满足沙铠任务。"
+    },
+    {
+      "id": "telescope",
+      "name": "望远镜",
+      "type": "equipment",
+      "rarity": "uncommon",
+      "price": null,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "scout_check_bonus": 1
+      },
+      "description": "侦察检定 +1，占 1 装备槽；不计入「装备加值总和」。"
+    },
+    {
+      "id": "contract",
+      "name": "契约书",
+      "type": "equipment",
+      "rarity": "uncommon",
+      "price": null,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "negotiation_check_bonus": 1
+      },
+      "description": "交涉检定 +1，占 1 装备槽；不计入「装备加值总和」。"
+    },
+    {
+      "id": "rope",
+      "name": "绳索",
+      "type": "equipment",
+      "rarity": "uncommon",
+      "price": null,
+      "stackable": false,
+      "max_stack": 1,
+      "tradable": false,
+      "quest_item": false,
+      "ai_task_protected": false,
+      "mvp_available": true,
+      "effects": {
+        "uphill_penalty_modifier": -0.5
+      },
+      "description": "上坡高差惩罚 −0.5 AP/层，下坡不变；单格最低 0.5 AP。占 1 装备槽。"
+    }
+  ]
+}

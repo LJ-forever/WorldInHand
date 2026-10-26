@@ -1,0 +1,23 @@
+{
+  "map_id": "borderland",
+  "name": "边陲荒原",
+  "description": "每次进入都会重新生成地块形状、生态分布、海拔与 POI。",
+  "randomize_seed": true,
+  "character_ids": ["lin_xiao", "sha_kai", "wei_la", "ying", "qing_heng"],
+  "event_ids": ["caravan", "bandit_ambush", "herb_patch", "goal_guard", "wildfire", "sandstorm", "old_well", "lost", "abandoned_camp", "wanderer", "cliff", "ancient_stele", "fallen_tree", "mirage", "pilgrim"],
+  "seed": 20261023,
+  "cell_count": 400,
+  "poi_count": 10,
+  "bounds": { "x": 190.0, "y": 0.0, "w": 900.0, "h": 720.0 },
+  "boundary_points": 72,
+  "boundary_roughness": 0.12,
+  "terrain_weights": { "plain": 1.0, "forest": 1.0, "desert": 1.0 },
+  "gradient": { "axis": "x", "low": "desert", "high": "forest", "strength": 2.2 },
+  "elevation": { "frequency": 0.011, "octaves": 3, "max": 4 },
+  "poi_min_hops": 4,
+  "start_goal_margin": 0.22,
+  "start_goal_samples": 28,
+  "start_goal_min_hops": 14,
+  "start_goal_max_hops": 30,
+  "order": 1
+}

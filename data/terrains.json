@@ -1,0 +1,114 @@
+{
+  "terrains": [
+    {
+      "id": "plain",
+      "name": "平原",
+      "color": "#8FAF6A",
+      "movement_coefficient": 1.2,
+      "mvp_enabled": true,
+      "scout_dc_mod": 0,
+      "event_affinity": ["caravan", "wildfire", "bandit_ambush", "wanderer"],
+      "description": "MVP 启用；浅绿。"
+    },
+    {
+      "id": "forest",
+      "name": "密林",
+      "color": "#2E5E3E",
+      "movement_coefficient": 2.0,
+      "mvp_enabled": true,
+      "scout_dc_mod": 2,
+      "event_affinity": ["bandit_ambush", "herb_patch"],
+      "description": "MVP 启用；深绿。"
+    },
+    {
+      "id": "desert",
+      "name": "沙漠",
+      "color": "#D9C27C",
+      "movement_coefficient": 2.5,
+      "mvp_enabled": true,
+      "scout_dc_mod": 1,
+      "event_affinity": ["sandstorm", "old_well"],
+      "description": "MVP 启用；沙黄。"
+    },
+    {
+      "id": "grassland",
+      "name": "草原",
+      "color": "#A9C05F",
+      "movement_coefficient": null,
+      "mvp_enabled": false,
+      "scout_dc_mod": 0,
+      "event_affinity": [],
+      "description": "P2 启用；黄绿。移动系数未定。"
+    },
+    {
+      "id": "hills",
+      "name": "丘陵",
+      "color": "#8C7B4A",
+      "movement_coefficient": null,
+      "mvp_enabled": false,
+      "scout_dc_mod": 1,
+      "event_affinity": [],
+      "description": "P2 启用；棕绿。移动系数未定。"
+    },
+    {
+      "id": "mountain",
+      "name": "山地",
+      "color": "#9A9A9A",
+      "movement_coefficient": 3.0,
+      "mvp_enabled": false,
+      "scout_dc_mod": 2,
+      "event_affinity": [],
+      "description": "P2 启用；灰白。"
+    },
+    {
+      "id": "swamp",
+      "name": "沼泽",
+      "color": "#3F5B46",
+      "movement_coefficient": 2.5,
+      "mvp_enabled": false,
+      "scout_dc_mod": 2,
+      "event_affinity": [],
+      "description": "P2 启用；暗绿。"
+    },
+    {
+      "id": "water",
+      "name": "水域",
+      "color": "#4A7FA8",
+      "movement_coefficient": null,
+      "mvp_enabled": false,
+      "scout_dc_mod": 1,
+      "event_affinity": [],
+      "description": "P2 启用；蓝色。移动系数未定。"
+    },
+    {
+      "id": "tundra",
+      "name": "冻原",
+      "color": "#C9D8DD",
+      "movement_coefficient": null,
+      "mvp_enabled": false,
+      "scout_dc_mod": 1,
+      "event_affinity": [],
+      "description": "P2 启用；白蓝。移动系数未定。"
+    },
+    {
+      "id": "gobi",
+      "name": "戈壁",
+      "color": "#B07A55",
+      "movement_coefficient": null,
+      "mvp_enabled": false,
+      "scout_dc_mod": 1,
+      "event_affinity": [],
+      "description": "P2 启用；红棕。移动系数未定。"
+    },
+    {
+      "id": "road",
+      "name": "道路",
+      "color": "#B9A992",
+      "movement_coefficient": 1.0,
+      "mvp_enabled": false,
+      "scout_dc_mod": 0,
+      "event_affinity": [],
+      "description": "MVP 不启用；系数 1.0 仅记录。"
+    }
+  ]
+}

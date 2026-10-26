@@ -1,0 +1,92 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/intro_overlay.gd" id="1_intro"]
+
+[node name="IntroOverlay" type="Control"]
+visible = false
+process_mode = 3
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_intro")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0117647, 0.012549, 0.00941176, 0.9)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(860, 610)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 38
+theme_override_constants/margin_top = 28
+theme_override_constants/margin_right = 38
+theme_override_constants/margin_bottom = 24
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Prologue" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.560784, 0.760784, 0.858824, 1)
+theme_override_font_sizes/font_size = 14
+text = "序 章"
+horizontal_alignment = 1
+
+[node name="Title" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.941176, 0.87451, 0.662745, 1)
+theme_override_font_sizes/font_size = 30
+text = "风沙将起"
+horizontal_alignment = 1
+
+[node name="Rule" type="HSeparator" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+
+[node name="Scroll" type="ScrollContainer" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Body" type="Label" parent="Center/Panel/Margin/VBox/Scroll"]
+custom_minimum_size = Vector2(780, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.858824, 0.827451, 0.741176, 1)
+theme_override_constants/line_spacing = 7
+theme_override_font_sizes/font_size = 16
+text = "你是旅人。边陲荒原在你们面前展开。"
+autowrap_mode = 3
+
+[node name="Relation" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.941176, 0.815686, 0.415686, 1)
+theme_override_font_sizes/font_size = 15
+text = "关系：—"
+autowrap_mode = 3
+horizontal_alignment = 1
+
+[node name="EnterButton" type="Button" parent="Center/Panel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+text = "踏入荒原"

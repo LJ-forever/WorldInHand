@@ -1,0 +1,238 @@
+{
+  "hidden_tasks": [
+    {
+      "id": "lin_map_before_goal",
+      "character_id": "lin_xiao",
+      "name": "绘制终点前的完整地图",
+      "relation": "compatible",
+      "initial_faction": "friendly",
+      "initial_favor": [3, 5],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "reveal_regions_before_goal",
+        "count": 3,
+        "by_ai": true
+      },
+      "behavior": "主动侦察，主动分享区域信息",
+      "description": "为队伍揭示终点前 3 个区域（沿起点到终点的最短路径）。仅统计林鸮自己揭示的格子。"
+    },
+    {
+      "id": "lin_reveal_goal_first",
+      "character_id": "lin_xiao",
+      "name": "抢先揭示终点并独占信息",
+      "relation": "competitive",
+      "initial_faction": "neutral",
+      "initial_favor": [-2, 0],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "reveal_goal_first",
+        "share_allowed": false
+      },
+      "behavior": "独自侦察，不主动分享终点信息",
+      "description": "先于玩家揭示终点，且未主动分享。信息不是不可共享资源，因此不互斥。"
+    },
+    {
+      "id": "lin_water_sources",
+      "character_id": "lin_xiao",
+      "name": "记录所有水源位置",
+      "relation": "independent",
+      "initial_faction": "neutral",
+      "initial_favor": [-1, 1],
+      "exclusive": false,
+      "mvp_available": false,
+      "completion": {
+        "type": "reveal_water_sources",
+        "count": 3
+      },
+      "behavior": "独自标记水源，不分享",
+      "description": "P1 启用：独自标记 3 处水源，不分享。"
+    },
+    {
+      "id": "sha_keep_player_alive",
+      "character_id": "sha_kai",
+      "name": "确保玩家活着到达终点",
+      "relation": "compatible",
+      "initial_faction": "friendly",
+      "initial_favor": [3, 5],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "player_alive_at_goal"
+      },
+      "behavior": "优先保护玩家，玩家 HP 低时主动援助",
+      "description": "玩家 HP > 0 到达终点。"
+    },
+    {
+      "id": "sha_carry_tradable",
+      "character_id": "sha_kai",
+      "name": "携带非初始的可交易物品到终点",
+      "relation": "protect",
+      "initial_faction": "friendly",
+      "initial_favor": [3, 5],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "hold_tradable_quest_item_at_goal",
+        "item_ids": ["pelt", "herb", "ancient_coin", "rare_charm"]
+      },
+      "behavior": "优先保护自身和物品，避免高风险路线",
+      "description": "到达终点时携带至少 1 件非初始的可交易物品；初始弯刀不计入。"
+    },
+    {
+      "id": "sha_raid_cargo",
+      "character_id": "sha_kai",
+      "name": "截获货物并转交沙盗",
+      "relation": "sabotage",
+      "initial_faction": "enemy",
+      "initial_favor": [-5, -3],
+      "exclusive": true,
+      "mvp_available": false,
+      "completion": {
+        "type": "raid_cargo"
+      },
+      "behavior": "寻找机会夺走货物，交给沙盗",
+      "description": "P1 启用：争夺货物类互斥任务。"
+    },
+    {
+      "id": "wei_favor_at_goal",
+      "character_id": "wei_la",
+      "name": "与玩家友好度达到 +3",
+      "relation": "compatible",
+      "initial_faction": "friendly",
+      "initial_favor": [3, 5],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "favor_at_goal",
+        "min": 3
+      },
+      "behavior": "主动交涉，优先提升友好度",
+      "description": "到达终点时，薇拉与玩家友好度 ≥ +3。"
+    },
+    {
+      "id": "wei_trap_player",
+      "character_id": "wei_la",
+      "name": "让玩家在终点前失去行动能力",
+      "relation": "assassination",
+      "initial_faction": "enemy",
+      "initial_favor": [-5, -3],
+      "exclusive": true,
+      "mvp_available": true,
+      "completion": {
+        "type": "player_trapped_at_window"
+      },
+      "behavior": "优先自保，寻找机会施加被困",
+      "description": "玩家到达终点时仍处于 trapped，或因被困未能到达终点。每局最多成功施加 1 次。"
+    },
+    {
+      "id": "wei_collect_intel",
+      "character_id": "wei_la",
+      "name": "收集三份关键情报",
+      "relation": "independent",
+      "initial_faction": "neutral",
+      "initial_favor": [-1, 1],
+      "exclusive": false,
+      "mvp_available": false,
+      "completion": {
+        "type": "collect_intel",
+        "count": 3
+      },
+      "behavior": "独自收集情报，不主动分享",
+      "description": "P1 启用：独自收集 3 份情报。"
+    },
+    {
+      "id": "ying_reach_goal_first",
+      "character_id": "ying",
+      "name": "先于玩家和其他 AI 到达终点",
+      "relation": "competitive",
+      "initial_faction": "neutral",
+      "initial_favor": [-2, 0],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "reach_goal_first"
+      },
+      "behavior": "独自快速移动，不主动合作",
+      "description": "先到只是额外奖励，不是不可共享资源，因此不互斥。"
+    },
+    {
+      "id": "ying_steal_gear",
+      "character_id": "ying",
+      "name": "偷走玩家关键装备",
+      "relation": "sabotage",
+      "initial_faction": "enemy",
+      "initial_favor": [-5, -3],
+      "exclusive": true,
+      "mvp_available": true,
+      "completion": {
+        "type": "steal_equipment",
+        "target": "player"
+      },
+      "behavior": "优先接近玩家，寻找偷窃机会",
+      "description": "偷窃检定成功，偷走玩家一件非消耗品装备；无装备则偷消耗品；再没有则失败等待。偷窃成功即完成。"
+    },
+    {
+      "id": "ying_unseen",
+      "character_id": "ying",
+      "name": "不被任何 AI 目击关键行动",
+      "relation": "independent",
+      "initial_faction": "neutral",
+      "initial_favor": [-1, 1],
+      "exclusive": false,
+      "mvp_available": false,
+      "completion": {
+        "type": "unseen_actions"
+      },
+      "behavior": "避免被 AI 发现偷窃或潜行行为",
+      "description": "P1 启用：关键行动不被 AI 目击。"
+    },
+    {
+      "id": "qing_no_poison_death",
+      "character_id": "qing_heng",
+      "name": "确保玩家不因中毒死亡",
+      "relation": "protect",
+      "initial_faction": "friendly",
+      "initial_favor": [3, 5],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "player_poisoned_and_survived"
+      },
+      "behavior": "优先关注玩家状态，主动提供解药",
+      "description": "玩家至少中毒一次，且中毒期间 HP 始终 > 0，并到达终点。从未中毒不算完成。"
+    },
+    {
+      "id": "qing_share_herb",
+      "character_id": "qing_heng",
+      "name": "采集 1 种草药并分享给玩家",
+      "relation": "compatible",
+      "initial_faction": "friendly",
+      "initial_favor": [3, 5],
+      "exclusive": false,
+      "mvp_available": true,
+      "completion": {
+        "type": "share_herb_to_player"
+      },
+      "behavior": "主动采集，遇到玩家时分享草药",
+      "description": "青蘅自动采集草药丛获得 herb，遇到玩家时触发分享，玩家获得 herb。"
+    },
+    {
+      "id": "qing_two_samples",
+      "character_id": "qing_heng",
+      "name": "独自采集两种样本",
+      "relation": "independent",
+      "initial_faction": "neutral",
+      "initial_favor": [-1, 1],
+      "exclusive": false,
+      "mvp_available": false,
+      "completion": {
+        "type": "collect_two_samples",
+        "count": 2
+      },
+      "behavior": "独自采集样本，不主动分享",
+      "description": "P1 启用：采集 2 种不同样本。"
+    }
+  ]
+}

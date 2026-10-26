@@ -1,0 +1,99 @@
+{
+  "characters": [
+    {
+      "id": "lin_xiao",
+      "name": "林鸮",
+      "role": "侦察兵",
+      "attributes": {
+        "speed": 4,
+        "stamina": 2,
+        "perception": 4,
+        "luck": 2,
+        "combat": 2,
+        "negotiation": 2
+      },
+      "traits": ["forest_hunter", "night_walker"],
+      "starting_equipment": ["telescope"],
+      "starting_items": [],
+      "starting_gold": 20,
+      "hidden_task_ids": ["lin_map_before_goal", "lin_reveal_goal_first", "lin_water_sources"],
+      "note": "属性总和 16；望远镜占 1 装备槽"
+    },
+    {
+      "id": "sha_kai",
+      "name": "沙铠",
+      "role": "沙漠护卫",
+      "attributes": {
+        "speed": 2,
+        "stamina": 5,
+        "perception": 2,
+        "luck": 2,
+        "combat": 4,
+        "negotiation": 2
+      },
+      "traits": ["desert_child", "heavy_armor"],
+      "starting_equipment": ["bandit_blade"],
+      "starting_items": [],
+      "starting_gold": 20,
+      "hidden_task_ids": ["sha_keep_player_alive", "sha_carry_tradable", "sha_raid_cargo"],
+      "note": "属性总和 17；初始弯刀直接使用 bandit_blade"
+    },
+    {
+      "id": "wei_la",
+      "name": "薇拉",
+      "role": "贵族交涉家",
+      "attributes": {
+        "speed": 2,
+        "stamina": 2,
+        "perception": 3,
+        "luck": 3,
+        "combat": 1,
+        "negotiation": 5
+      },
+      "traits": ["noble", "acrophobia"],
+      "starting_equipment": ["contract"],
+      "starting_items": [],
+      "starting_gold": 20,
+      "hidden_task_ids": ["wei_favor_at_goal", "wei_trap_player", "wei_collect_intel"],
+      "note": "属性总和 16；契约书占 1 装备槽"
+    },
+    {
+      "id": "ying",
+      "name": "影",
+      "role": "逃犯盗贼",
+      "attributes": {
+        "speed": 5,
+        "stamina": 2,
+        "perception": 3,
+        "luck": 3,
+        "combat": 2,
+        "negotiation": 2
+      },
+      "traits": ["thief", "night_walker"],
+      "starting_equipment": ["rope"],
+      "starting_items": [],
+      "starting_gold": 20,
+      "hidden_task_ids": ["ying_reach_goal_first", "ying_steal_gear", "ying_unseen"],
+      "note": "属性总和 17（v1.1.16 已下调）；绳索占 1 装备槽"
+    },
+    {
+      "id": "qing_heng",
+      "name": "青蘅",
+      "role": "草药学者",
+      "attributes": {
+        "speed": 2,
+        "stamina": 3,
+        "perception": 5,
+        "luck": 2,
+        "combat": 1,
+        "negotiation": 3
+      },
+      "traits": ["herbalist", "acrophobia"],
+      "starting_equipment": [],
+      "starting_items": ["potion"],
+      "starting_gold": 20,
+      "hidden_task_ids": ["qing_no_poison_death", "qing_share_herb", "qing_two_samples"],
+      "note": "属性总和 16；药水为消耗品，不占装备槽"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/boot/boot.gd" id="1_boot"]
+
+[node name="Boot" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_boot")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0862745, 0.0784314, 0.0705882, 1)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="VBoxContainer" parent="Center"]
+custom_minimum_size = Vector2(760, 0)
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="Title" type="Label" parent="Center/Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.93, 0.87, 0.74, 1)
+theme_override_font_sizes/font_size = 44
+text = "真命"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="Center/Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.68, 0.62, 0.5, 1)
+theme_override_font_sizes/font_size = 18
+text = "桌游式回合探索 · Godot MVP 原型骨架 v0.1"
+horizontal_alignment = 1
+
+[node name="Sep" type="HSeparator" parent="Center/Panel"]
+layout_mode = 2
+
+[node name="Status" type="Label" parent="Center/Panel"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 17
+text = "正在自检数据…"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Detail" type="Label" parent="Center/Panel"]
+custom_minimum_size = Vector2(760, 120)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.6, 0.58, 0.55, 1)
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="Footer" type="Label" parent="Center/Panel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.45, 0.43, 0.4, 1)
+theme_override_font_sizes/font_size = 12
+text = "Godot 4.7.2 · 数据驱动 · 玩法逻辑待 P0 实现"
+horizontal_alignment = 1

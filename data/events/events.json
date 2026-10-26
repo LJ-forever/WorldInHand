@@ -1,0 +1,1773 @@
+{
+  "events": [
+    {
+      "id": "caravan",
+      "name": "商队",
+      "trigger": "poi",
+      "terrains": [
+        "plain"
+      ],
+      "weight": 10,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "一支商队正沿着古道缓慢前行，骆驼背上的货物蒙着厚布。领队打量着你的行囊。",
+      "choices": [
+        {
+          "id": "trade",
+          "text": "交易",
+          "check": {
+            "attr": "negotiation",
+            "dc": 10
+          },
+          "resolution": "trade",
+          "params": {
+            "trade_once_per_event": true,
+            "can_decline": true,
+            "price_multiplier_on_great_success": 0.5,
+            "offers": [
+              {
+                "type": "buy",
+                "item_id": "pelt",
+                "price": 10,
+                "max_per_event": 1
+              },
+              {
+                "type": "buy",
+                "item_id": "rare_charm",
+                "price": 30,
+                "max_per_event": 1
+              },
+              {
+                "type": "barter",
+                "give": {
+                  "item_id": "pelt",
+                  "count": 2
+                },
+                "receive": {
+                  "item_id": "rare_charm",
+                  "count": 1
+                },
+                "max_per_event": 1
+              }
+            ]
+          },
+          "ai_allowed": false,
+          "once_per_event": true,
+          "trait_modifiers": [
+            {
+              "trait": "noble",
+              "bonus": 2
+            },
+            {
+              "trait": "thief",
+              "bonus": -1
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [],
+              "note": "交易成功且价格减半；由解析器读取 params.price_multiplier_on_great_success。"
+            },
+            "success": {
+              "effects": [],
+              "note": "进入交易菜单；每次商队事件只能交易一次；可放弃购买；不消耗 AP。"
+            },
+            "fail": {
+              "effects": [],
+              "note": "交易未达成，不扣金币，不消耗 AP。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "suspected"
+                }
+              ],
+              "player_only": true,
+              "note": "仅玩家；AI 不能交易，不会获得 suspected。"
+            }
+          }
+        },
+        {
+          "id": "steal",
+          "text": "偷窃",
+          "check": {
+            "attr": "luck",
+            "dc": 12
+          },
+          "resolution": "steal",
+          "params": {
+            "item_choices": [
+              "pelt",
+              "rare_charm"
+            ],
+            "ai_task_aware": true
+          },
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "thief",
+              "bonus": 2
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "player_effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "rare_charm"
+                },
+                {
+                  "type": "gold",
+                  "value": 10
+                }
+              ],
+              "ai_effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "rare_charm"
+                }
+              ],
+              "note": "AI 偷窃大成功不获得金币。"
+            },
+            "success": {
+              "player_effects": [
+                {
+                  "type": "item_gain",
+                  "choose_from": [
+                    "pelt",
+                    "rare_charm"
+                  ],
+                  "count": 1
+                },
+                {
+                  "type": "gold",
+                  "value": 5
+                }
+              ],
+              "ai_effects": [
+                {
+                  "type": "item_gain",
+                  "choose_from": [
+                    "pelt",
+                    "rare_charm"
+                  ],
+                  "count": 1,
+                  "ai_task_aware": true
+                }
+              ],
+              "note": "成功/失败均不消耗 AP；AI 不获得金币，成功不改变友好度。"
+            },
+            "fail": {
+              "player_effects": [
+                {
+                  "type": "flag_add",
+                  "flag_id": "wanted"
+                },
+                {
+                  "type": "hp",
+                  "value": -1
+                }
+              ],
+              "ai_effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                }
+              ],
+              "note": "AI 不获得 wanted，不消耗 AP，友好度不变，不触发阈值检查。"
+            },
+            "great_fail": {
+              "player_effects": [
+                {
+                  "type": "flag_add",
+                  "flag_id": "wanted"
+                },
+                {
+                  "type": "hp",
+                  "value": -2
+                }
+              ],
+              "ai_effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                }
+              ],
+              "note": "AI 大失败 HP -2，不获得 wanted，友好度不变。"
+            }
+          }
+        },
+        {
+          "id": "negotiate",
+          "text": "交涉",
+          "check": {
+            "attr": "negotiation",
+            "dc": 11
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "noble",
+              "bonus": 2
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "goal_direction"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ],
+              "note": "浪费 1 AP；AP 不足转 HP。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "item_lose",
+                  "mode": "random",
+                  "count": 1
+                }
+              ],
+              "note": "被偷 1 件物品；空背包按 §7.8 处理。"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "bandit_ambush",
+      "name": "马匪伏击",
+      "trigger": "enter_region",
+      "terrains": [
+        "forest",
+        "plain"
+      ],
+      "weight": 10,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "马匪从林间冲出，拦住去路。领头的刀客咧嘴一笑。",
+      "choices": [
+        {
+          "id": "fight",
+          "text": "战斗",
+          "check": {
+            "attr": "combat",
+            "dc": 12
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "forest_hunter",
+              "bonus": 2,
+              "if_terrain": "forest"
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "bandit_blade"
+                },
+                {
+                  "type": "gold",
+                  "value": 10
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "bandit_blade"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "item_lose",
+                  "mode": "random",
+                  "count": 1
+                }
+              ],
+              "note": "随机丢失 1 件物品；空背包按 §7.8 处理。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -4
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "bleeding",
+                  "duration": 3
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "negotiate",
+          "text": "交涉",
+          "check": {
+            "attr": "negotiation",
+            "dc": 11
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "noble",
+              "bonus": 2
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "flag_add",
+                  "flag_id": "bandit_ally"
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "gold",
+                  "value": -5
+                }
+              ],
+              "note": "金币不足时扣到 0，不额外扣 HP。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "flag_add",
+                  "flag_id": "wanted"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "flee",
+          "text": "逃跑",
+          "check": {
+            "attr": "speed",
+            "dc": 10
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [],
+              "note": "安全脱离，无额外消耗。"
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ],
+              "note": "AP 不足转 HP。"
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                },
+                {
+                  "type": "ap",
+                  "value": -2
+                }
+              ],
+              "note": "AP 不足转 HP。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -3
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "herb_patch",
+      "name": "草药丛",
+      "trigger": "poi",
+      "terrains": [
+        "forest"
+      ],
+      "weight": 10,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "林间空地上生着一片草药，叶背泛着银光。远处隐约有窸窣声。",
+      "choices": [
+        {
+          "id": "gather",
+          "text": "采集",
+          "check": {
+            "attr": "perception",
+            "dc": 10
+          },
+          "resolution": "check",
+          "auto_success_if_trait": "herbalist",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "herb",
+                  "count": 2
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "herb"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ],
+              "note": "浪费 1 AP；AP 不足转 HP。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "poisoned",
+                  "duration": 3
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "ignore",
+          "text": "无视",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "goal_guard",
+      "name": "终点守卫",
+      "trigger": "goal",
+      "terrains": [
+        "any"
+      ],
+      "weight": 100,
+      "cooldown": 0,
+      "per_character": true,
+      "text": "最后一道关口前，一个沉默的身影横刀而立。它不看你的脸，只看你的脚。",
+      "choices": [
+        {
+          "id": "fight",
+          "text": "战斗",
+          "check": {
+            "attr": "combat",
+            "dc": 14
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "heavy_armor",
+              "bonus": 1
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "enter_goal"
+                },
+                {
+                  "type": "gold",
+                  "value": 50
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "enter_goal"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 1
+                }
+              ],
+              "note": "退回 1 格。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -4
+                },
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 2
+                }
+              ],
+              "note": "退回 2 格。"
+            }
+          }
+        },
+        {
+          "id": "negotiate",
+          "text": "交涉",
+          "check": {
+            "attr": "negotiation",
+            "dc": 13
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "noble",
+              "bonus": 2
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "enter_goal"
+                },
+                {
+                  "type": "reveal",
+                  "kind": "ai_faction_clue",
+                  "value": 1
+                }
+              ],
+              "note": "揭示等级 +1（不超过 3）；主隐藏任务线索标 P1。"
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "enter_goal"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -4
+                },
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 2
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "sacrifice_item",
+          "text": "使用物品",
+          "check": null,
+          "resolution": "item_sacrifice",
+          "params": {
+            "allow_types": [
+              "consumable",
+              "material",
+              "equipment"
+            ],
+            "exclude_quest_items": true,
+            "consume_count": 1,
+            "requires_any_item": true,
+            "guard_leaves": true
+          },
+          "ai_allowed": false,
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "enter_goal"
+                }
+              ],
+              "note": "不消耗 AP；守卫本局永久离开；AI 不能选择此选项。"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "wildfire",
+      "name": "野火",
+      "trigger": "wander",
+      "terrains": [
+        "plain"
+      ],
+      "weight": 9,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "风把干燥的草叶压向一边，远处升起一道橙红的火线，热浪已经扑到脸上。",
+      "choices": [
+        {
+          "id": "flee",
+          "text": "逃跑",
+          "check": {
+            "attr": "speed",
+            "dc": 11
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": 1
+                }
+              ]
+            },
+            "success": {
+              "effects": []
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "ap",
+                  "value": -2
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -3
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "burned",
+                  "duration": 2
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "extinguish",
+          "text": "灭火",
+          "check": {
+            "attr": "stamina",
+            "dc": 13
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "supply",
+                  "count": 2
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -4
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "sandstorm",
+      "name": "沙尘暴",
+      "trigger": "enter_region",
+      "terrains": [
+        "desert"
+      ],
+      "weight": 10,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "天边的黄色墙幕迅速逼近，沙粒打在皮肤上生疼，视线在几步之外就彻底消失。",
+      "choices": [
+        {
+          "id": "shelter",
+          "text": "找掩体",
+          "check": {
+            "attr": "perception",
+            "dc": 12
+          },
+          "resolution": "check",
+          "immune_if_trait": "desert_child",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                }
+              ]
+            },
+            "success": {
+              "effects": []
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "lost",
+                  "duration": 1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "lost",
+                  "duration": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "endure",
+          "text": "硬扛",
+          "check": {
+            "attr": "stamina",
+            "dc": 13
+          },
+          "resolution": "check",
+          "immune_if_trait": "desert_child",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": []
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -3
+                },
+                {
+                  "type": "hp",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "lost",
+                  "duration": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "old_well",
+      "name": "古井",
+      "trigger": "poi",
+      "terrains": [
+        "desert"
+      ],
+      "weight": 10,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "沙丘背风处露出一圈风化的石沿，井绳早已腐烂，井底却还有一点反光。",
+      "choices": [
+        {
+          "id": "drink",
+          "text": "饮水",
+          "check": null,
+          "resolution": "heal_choice",
+          "params": {
+            "options": [
+              "hp",
+              "ap"
+            ],
+            "ai_auto": "hp"
+          },
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": []
+            }
+          }
+        },
+        {
+          "id": "investigate",
+          "text": "探查",
+          "check": {
+            "attr": "perception",
+            "dc": 12
+          },
+          "resolution": "check",
+          "trait_modifiers": [
+            {
+              "trait": "desert_child",
+              "bonus": 2
+            }
+          ],
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "ancient_coin",
+                  "count": 2
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "ancient_coin"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "poisoned",
+                  "duration": 3
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "poisoned",
+                  "duration": 3
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "lost",
+      "name": "迷路",
+      "trigger": "wander",
+      "terrains": [
+        "any"
+      ],
+      "weight": 9,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "同样的岩脊你已经见过三次。太阳偏了，脚下的影子指向一个说不清的方向。",
+      "choices": [
+        {
+          "id": "orient",
+          "text": "辨认方向",
+          "check": {
+            "attr": "perception",
+            "dc": 11
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "region_direction"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "lost",
+                  "duration": 1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "lost_severe",
+                  "duration": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "intuition",
+          "text": "凭直觉",
+          "check": {
+            "attr": "luck",
+            "dc": 10
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "shortcut"
+                },
+                {
+                  "type": "flag_add",
+                  "flag_id": "shortcut_found"
+                }
+              ]
+            },
+            "success": {
+              "effects": []
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "abandoned_camp",
+      "name": "废弃营地",
+      "trigger": "poi",
+      "terrains": [
+        "any"
+      ],
+      "weight": 8,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "半塌的帐篷围着一圈冷灰，几根断箭插在土里，像是匆忙离开时留下的。",
+      "choices": [
+        {
+          "id": "search",
+          "text": "搜索",
+          "check": {
+            "attr": "perception",
+            "dc": 10
+          },
+          "resolution": "check",
+          "trait_modifiers": [
+            {
+              "trait": "thief",
+              "bonus": 2
+            }
+          ],
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "mount"
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "pelt"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                }
+              ],
+              "note": "触发陷阱。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "bleeding",
+                  "duration": 3
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "rest",
+          "text": "休息",
+          "check": {
+            "attr": "luck",
+            "dc": 9
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": 2
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": 1
+                },
+                {
+                  "type": "ap",
+                  "value": 1
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "wanderer",
+      "name": "流浪者",
+      "trigger": "enter_region",
+      "terrains": [
+        "plain"
+      ],
+      "weight": 9,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "一个背着破布包的人坐在路碑旁，鞋底磨得几乎透明。他先看了看你的水囊，又移开视线。",
+      "choices": [
+        {
+          "id": "talk",
+          "text": "交谈",
+          "check": {
+            "attr": "negotiation",
+            "dc": 9
+          },
+          "resolution": "check",
+          "trait_modifiers": [
+            {
+              "trait": "noble",
+              "bonus": 1
+            }
+          ],
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "goal_direction"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "item_lose",
+                  "mode": "random",
+                  "count": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "ignore",
+          "text": "无视",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "cliff",
+      "name": "悬崖",
+      "trigger": "enter_region",
+      "terrains": [
+        "any"
+      ],
+      "weight": 7,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "脚下的碎石滚下崖壁，很久才传来回响。对岸的坡面看起来能省下不少路。",
+      "choices": [
+        {
+          "id": "climb",
+          "text": "攀爬",
+          "check": {
+            "attr": "speed",
+            "dc": 12
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "shortcut"
+                },
+                {
+                  "type": "flag_add",
+                  "flag_id": "shortcut_found"
+                }
+              ]
+            },
+            "success": {
+              "effects": []
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "hp_relief",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -4
+                },
+                {
+                  "type": "hp_relief",
+                  "value": -1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "detour",
+          "text": "绕路",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -2
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ancient_stele",
+      "name": "神秘石碑",
+      "trigger": "enter_region",
+      "terrains": [
+        "any"
+      ],
+      "weight": 8,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "一块半埋的黑色石碑露出地表，刻痕被风磨得模糊，靠近时能听见极轻的嗡鸣。",
+      "choices": [
+        {
+          "id": "decipher",
+          "text": "解读",
+          "check": {
+            "attr": "perception",
+            "dc": 12
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "hermit_blessing"
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                },
+                {
+                  "type": "reveal",
+                  "kind": "ai_faction_clue",
+                  "value": 1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "cursed_minor"
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "cursed"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "destroy",
+          "text": "破坏",
+          "check": {
+            "attr": "stamina",
+            "dc": 13
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "ancient_coin",
+                  "count": 2
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "ancient_coin"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "cursed"
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "cursed"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "leave",
+          "text": "离开",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": []
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "fallen_tree",
+      "name": "倒木当道",
+      "trigger": "wander",
+      "terrains": [
+        "forest",
+        "plain"
+      ],
+      "weight": 9,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "一棵被风拔起的老树横在路中，枝干间还挂着湿泥。翻过去能省路，但树皮下滑得很。",
+      "choices": [
+        {
+          "id": "climb",
+          "text": "翻越",
+          "check": {
+            "attr": "speed",
+            "dc": 11
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "forest_hunter",
+              "bonus": 2,
+              "if_terrain": "forest"
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "item_gain",
+                  "item_id": "herb"
+                }
+              ]
+            },
+            "success": {
+              "effects": []
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                },
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "detour",
+          "text": "绕行",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "mirage",
+      "name": "沙海蜃景",
+      "trigger": "wander",
+      "terrains": [
+        "desert"
+      ],
+      "weight": 9,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "远处浮起一片水光，棕榈的影子在热浪里摇晃。你眨了下眼，它又移到了更远的地方。",
+      "choices": [
+        {
+          "id": "chase",
+          "text": "追过去",
+          "check": {
+            "attr": "perception",
+            "dc": 12
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                },
+                {
+                  "type": "reveal",
+                  "kind": "goal_direction"
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "region_direction"
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                },
+                {
+                  "type": "status_add",
+                  "status_id": "lost",
+                  "duration": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "ignore",
+          "text": "避开",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "pilgrim",
+      "name": "朝圣者",
+      "trigger": "wander",
+      "terrains": [
+        "any"
+      ],
+      "weight": 8,
+      "cooldown": 2,
+      "per_character": false,
+      "text": "一个披着旧斗篷的朝圣者与你同路。他走得很慢，却对附近的水源和旧道格外熟悉。",
+      "choices": [
+        {
+          "id": "talk",
+          "text": "交谈",
+          "check": {
+            "attr": "negotiation",
+            "dc": 10
+          },
+          "resolution": "check",
+          "ai_allowed": true,
+          "trait_modifiers": [
+            {
+              "trait": "noble",
+              "bonus": 1
+            }
+          ],
+          "outcomes": {
+            "great_success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "goal_direction"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi"
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                }
+              ]
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "status_add",
+                  "status_id": "lost",
+                  "duration": 1
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "walk_together",
+          "text": "同行一程",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": true,
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "ap",
+                  "value": -1
+                },
+                {
+                  "type": "hp",
+                  "value": 1
+                },
+                {
+                  "type": "ai_favor",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

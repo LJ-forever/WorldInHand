@@ -1,0 +1,60 @@
+{
+  "flags": [
+    {
+      "id": "bandit_ally",
+      "name": "马匪盟友",
+      "category": "ai",
+      "effects": {
+        "bandit_ai_stance": "neutral_or_friendly"
+      },
+      "ai_can_gain": false,
+      "mvp_effect_note": "MVP 没有马匪 AI，仅作为叙事与后续扩展记录。",
+      "description": "马匪 AI 中立或友方。"
+    },
+    {
+      "id": "goal_revealed",
+      "name": "终点已揭示",
+      "category": "quest",
+      "effects": {
+        "goal_visible": true
+      },
+      "ai_can_gain": true,
+      "mvp_effect_note": "终点在地图上可见。",
+      "description": "终点在地图上可见。"
+    },
+    {
+      "id": "hunted",
+      "name": "被猎杀",
+      "category": "world",
+      "effects": {
+        "enemy_ai_aggression": "up"
+      },
+      "ai_can_gain": false,
+      "mvp_effect_note": "敌方 AI 更易主动攻击。",
+      "description": "敌方 AI 更易主动攻击玩家。"
+    },
+    {
+      "id": "shortcut_found",
+      "name": "捷径已发现",
+      "category": "world",
+      "effects": {
+        "path_ap_multiplier": 0.8
+      },
+      "ai_can_gain": true,
+      "mvp_effect_note": "对应路径 AP 消耗降低 20%。",
+      "description": "被揭示的捷径路径 AP 消耗降低 20%。"
+    },
+    {
+      "id": "wanted",
+      "name": "被通缉",
+      "category": "player",
+      "effects": {
+        "merchants_refuse_trade": true,
+        "enemy_ai_aggression": "up"
+      },
+      "ai_can_gain": false,
+      "mvp_effect_note": "AI 永不获得；仅玩家。",
+      "description": "商人拒绝交易，AI 敌方更易攻击；AI 不获得此标记。"
+    }
+  ]
+}

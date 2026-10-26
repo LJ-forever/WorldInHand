@@ -1,0 +1,131 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/event_panel.gd" id="1_panel"]
+
+[node name="EventOverlay" type="Control"]
+visible = false
+process_mode = 3
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_panel")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0196078, 0.0215686, 0.0196078, 0.72)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(700, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 22
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="TitleLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.941176, 0.827451, 0.560784, 1)
+theme_override_font_sizes/font_size = 26
+text = "事件"
+
+[node name="MetaLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.588235, 0.560784, 0.501961, 1)
+theme_override_font_sizes/font_size = 13
+text = "触发：地点"
+
+[node name="ContextLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.901961, 0.733333, 0.431373, 1)
+theme_override_font_sizes/font_size = 13
+text = "局势"
+autowrap_mode = 3
+
+[node name="EventText" type="Label" parent="Center/Panel/Margin/VBox"]
+custom_minimum_size = Vector2(640, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.815686, 0.784314, 0.713726, 1)
+theme_override_font_sizes/font_size = 15
+text = "事件描述"
+autowrap_mode = 3
+
+[node name="DicePanel" type="PanelContainer" parent="Center/Panel/Margin/VBox"]
+visible = false
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel/Margin/VBox/DicePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 8
+
+[node name="DiceLabel" type="Label" parent="Center/Panel/Margin/VBox/DicePanel/Margin"]
+custom_minimum_size = Vector2(620, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.647059, 0.870588, 0.941176, 1)
+theme_override_font_sizes/font_size = 14
+text = "2d6"
+autowrap_mode = 3
+
+[node name="ResultTitle" type="Label" parent="Center/Panel/Margin/VBox"]
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.901961, 0.815686, 0.509804, 1)
+theme_override_font_sizes/font_size = 18
+text = "结果"
+
+[node name="OutcomeSummary" type="RichTextLabel" parent="Center/Panel/Margin/VBox"]
+visible = false
+custom_minimum_size = Vector2(620, 0)
+layout_mode = 2
+theme_override_colors/default_color = Color(0.858824, 0.827451, 0.741176, 1)
+theme_override_font_sizes/normal_font_size = 14
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+autowrap_mode = 3
+
+[node name="EffectsLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+visible = false
+custom_minimum_size = Vector2(620, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.733333, 0.760784, 0.682353, 1)
+theme_override_font_sizes/font_size = 14
+text = "效果"
+autowrap_mode = 3
+
+[node name="Choices" type="VBoxContainer" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ContinueButton" type="Button" parent="Center/Panel/Margin/VBox"]
+visible = false
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = "继续"

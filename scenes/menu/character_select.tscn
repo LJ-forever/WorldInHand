@@ -1,0 +1,87 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/menu/character_select.gd" id="1_charselect"]
+
+[node name="CharacterSelect" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_charselect")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0784314, 0.0705882, 0.0588235, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 42
+theme_override_constants/margin_top = 30
+theme_override_constants/margin_right = 42
+theme_override_constants/margin_bottom = 24
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="BackButton" type="Button" parent="Margin/VBox/Header"]
+custom_minimum_size = Vector2(120, 36)
+layout_mode = 2
+text = "← 返回地图"
+
+[node name="Title" type="Label" parent="Margin/VBox/Header"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.945098, 0.87451, 0.662745, 1)
+theme_override_font_sizes/font_size = 30
+text = "选择角色"
+vertical_alignment = 1
+
+[node name="Spacer" type="Control" parent="Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MapLabel" type="Label" parent="Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.721569, 0.67451, 0.584314, 1)
+theme_override_font_sizes/font_size = 15
+text = "地图：—"
+
+[node name="Hint" type="Label" parent="Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.478431, 0.45098, 0.396078, 1)
+theme_override_font_sizes/font_size = 14
+text = "地图配置已确定；点击角色卡片开始本局。"
+
+[node name="Center" type="CenterContainer" parent="Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CharacterGrid" type="GridContainer" parent="Margin/VBox/Center"]
+layout_mode = 2
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+columns = 5
+
+[node name="Status" type="Label" parent="Margin/VBox"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+theme_override_font_sizes/font_size = 14
+text = "点击角色开始"
+horizontal_alignment = 1
+vertical_alignment = 1

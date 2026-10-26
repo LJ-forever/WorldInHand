@@ -1,0 +1,88 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/combat_overlay.gd" id="1_combat"]
+
+[node name="CombatOverlay" type="Control"]
+visible = false
+process_mode = 3
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_combat")
+
+[node name="Dim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0588235, 0.0196078, 0.0196078, 0.62)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(660, 0)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 22
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.941176, 0.478431, 0.419608, 1)
+theme_override_font_sizes/font_size = 26
+text = "遭遇袭击"
+
+[node name="MetaLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.705882, 0.596078, 0.541176, 1)
+theme_override_font_sizes/font_size = 14
+text = "同伴抢先出手"
+
+[node name="DetailLabel" type="Label" parent="Center/Panel/Margin/VBox"]
+custom_minimum_size = Vector2(600, 0)
+layout_mode = 2
+theme_override_colors/font_color = Color(0.819608, 0.776471, 0.694118, 1)
+theme_override_font_sizes/font_size = 14
+text = "攻击检定"
+autowrap_mode = 3
+
+[node name="Buttons" type="HBoxContainer" parent="Center/Panel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 14
+alignment = 1
+
+[node name="CounterButton" type="Button" parent="Center/Panel/Margin/VBox/Buttons"]
+custom_minimum_size = Vector2(230, 42)
+layout_mode = 2
+text = "消耗 1 AP 反击"
+
+[node name="EndureButton" type="Button" parent="Center/Panel/Margin/VBox/Buttons"]
+custom_minimum_size = Vector2(180, 42)
+layout_mode = 2
+text = "承受这一击"
+
+[node name="ContinueButton" type="Button" parent="Center/Panel/Margin/VBox"]
+visible = false
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = "继续"

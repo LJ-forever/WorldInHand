@@ -1,0 +1,43 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="真命 · MVP 原型"
+config/description="桌游式单机回合探索游戏原型。Voronoi 不规则地块、自由画线、逐格移动动画。"
+config/version="1.6"
+run/main_scene="res://scenes/menu/main_menu.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/icon="res://icon.svg"
+
+[autoload]
+
+RNGManager="*res://scripts/autoload/rng_manager.gd"
+DataManager="*res://scripts/autoload/data_manager.gd"
+EventManager="*res://scripts/autoload/event_manager.gd"
+GameManager="*res://scripts/autoload/game_manager.gd"
+SaveManager="*res://scripts/autoload/save_manager.gd"
+ModManager="*res://scripts/autoload/mod_manager.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+
+[gui]
+
+theme/custom="res://ui/theme.tres"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.0862745, 0.0784314, 0.0705882, 1)
