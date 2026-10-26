@@ -12,7 +12,7 @@ config_version=5
 
 config/name="真命 · MVP 原型"
 config/description="桌游式单机回合探索游戏原型。Voronoi 不规则地块、自由画线、逐格移动动画。"
-config/version="1.6"
+config/version="1.7"
 run/main_scene="res://scenes/menu/main_menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.svg"

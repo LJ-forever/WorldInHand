@@ -449,15 +449,19 @@ func _grant_poi_discovery(cell_id: int, cell: MapData.Cell) -> String:
 	var terrain_name := map.terrain_display_name(cell.terrain)
 	var note := ""
 	if roll < POI_REWARD_SUPPLY_CHANCE:
-		player.add_item("supply", 1)
+		var supply_grant := GameManager.grant_item("supply", 1, "POI 发现")
 		note = "首次踏足%s（地块 %d）：在避风处找到补给 ×1。" % [terrain_name, cell_id + 1]
+		if bool(supply_grant.get("queued", false)):
+			note += " 背包已满，请在背包页取舍。"
 	elif roll < POI_REWARD_GOLD_CHANCE:
 		var gold := rng.randi_range(POI_REWARD_GOLD_MIN, POI_REWARD_GOLD_MAX)
 		player.gold += gold
 		note = "首次踏足%s（地块 %d）：搜到 %d 金币。" % [terrain_name, cell_id + 1, gold]
 	else:
-		player.add_item("potion", 1)
+		var potion_grant := GameManager.grant_item("potion", 1, "POI 发现")
 		note = "首次踏足%s（地块 %d）：找到药水 ×1。" % [terrain_name, cell_id + 1]
+		if bool(potion_grant.get("queued", false)):
+			note += " 背包已满，请在背包页取舍。"
 	GameManager.add_world_log(note)
 	GameManager.inventory_changed.emit()
 	GameManager.world_notice.emit(note)
@@ -591,9 +595,9 @@ func resolve_trade_offer(index: int) -> Dictionary:
 		var price := int(offer.get("price", 0))
 		var item_id := String(offer.get("item_id", ""))
 		player.gold -= price
-		player.add_item(item_id, 1)
+		var bought := GameManager.grant_item(item_id, 1, "商队交易")
 		var cost_text := "花费 %d 金币。" % price
-		var gain_text := "获得 %s ×1。" % _item_name(item_id)
+		var gain_text := String(bought.get("message", "获得 %s ×1。" % _item_name(item_id)))
 		messages.append(cost_text)
 		messages.append(gain_text)
 		_add_cost(costs, cost_text, "gold")
@@ -604,9 +608,9 @@ func resolve_trade_offer(index: int) -> Dictionary:
 		var give_count := int(offer.get("give_count", 1))
 		var receive_count := int(offer.get("receive_count", 1))
 		player.remove_item(give_id, give_count)
-		player.add_item(receive_id, receive_count)
+		var received := GameManager.grant_item(receive_id, receive_count, "商队交易")
 		var give_text := "失去 %s ×%d。" % [_item_name(give_id), give_count]
-		var receive_text := "获得 %s ×%d。" % [_item_name(receive_id), receive_count]
+		var receive_text := String(received.get("message", "获得 %s ×%d。" % [_item_name(receive_id), receive_count]))
 		messages.append(give_text)
 		messages.append(receive_text)
 		_add_cost(costs, give_text, "item")
@@ -649,8 +653,8 @@ func resolve_steal_item(item_id: String) -> Dictionary:
 		effects.append(effect)
 	_pending.clear()
 	var applied := _apply_effects(effects)
-	GameManager.player.add_item(item_id, 1)
-	var stolen_text := "获得 %s ×1。" % _item_name(item_id)
+	var stolen := GameManager.grant_item(item_id, 1, "事件偷窃")
+	var stolen_text := String(stolen.get("message", "获得 %s ×1。" % _item_name(item_id)))
 	applied["messages"].push_front(stolen_text)
 	var rewards: Array[Dictionary] = []
 	for entry in applied.get("rewards", []):
@@ -1534,8 +1538,10 @@ func _apply_effects(effects: Array) -> Dictionary:
 					if not choices.is_empty():
 						item_id = String(choices[0])
 				if not item_id.is_empty():
-					player.add_item(item_id, count)
-					var item_text := "获得 %s ×%d。" % [_item_name(item_id), count]
+					var item_grant := GameManager.grant_item(item_id, count, "事件奖励")
+					var item_text := String(item_grant.get(
+						"message", "获得 %s ×%d。" % [_item_name(item_id), count]
+					))
 					messages.append(item_text)
 					_add_reward(rewards, item_text, "item", _item_reward_hint(item_id))
 			"item_lose":

@@ -212,6 +212,30 @@ func take_damage(amount: int) -> void:
 	hp = int(max(0, hp - amount))
 
 
+## 背包容量按“物品堆”计算：同种可叠加物品占 1 格，不同物品各占 1 格。
+## 设计 §15.1：玩家背包 8 格；装备栏另算。
+const INVENTORY_SLOT_LIMIT := 8
+
+
+func inventory_slot_count() -> int:
+	return inventory_types().size()
+
+
+func inventory_types() -> Array[String]:
+	var types: Array[String] = []
+	for item_id in inventory:
+		if not types.has(item_id):
+			types.append(item_id)
+	return types
+
+
+## 还能不能放入 item_id。已有同种物品时视为可叠加，不再占新格。
+func can_add_item(item_id: String = "") -> bool:
+	if not item_id.is_empty() and inventory.has(item_id):
+		return true
+	return inventory_slot_count() < INVENTORY_SLOT_LIMIT
+
+
 func add_item(item_id: String, count: int = 1) -> void:
 	if item_id.is_empty():
 		return

@@ -21,23 +21,31 @@ signal closed
 @onready var equip_title: Label = $Center/Panel/Margin/VBox/Body/Left/EquipTitle
 @onready var equip_slots: VBoxContainer = $Center/Panel/Margin/VBox/Body/Left/EquipSlots
 @onready var bag_title: Label = $Center/Panel/Margin/VBox/Body/Right/BagTitle
+@onready var recovery_row: HBoxContainer = $Center/Panel/Margin/VBox/Body/Right/RecoveryRow
+@onready var recovery_label: Label = $Center/Panel/Margin/VBox/Body/Right/RecoveryRow/RecoveryLabel
+@onready var recovery_button: Button = $Center/Panel/Margin/VBox/Body/Right/RecoveryRow/RecoveryButton
 @onready var grid: GridContainer = $Center/Panel/Margin/VBox/Body/Right/Scroll/Grid
 @onready var detail_label: Label = $Center/Panel/Margin/VBox/DetailPanel/DetailMargin/DetailVBox/DetailLabel
 @onready var use_actions: HBoxContainer = $Center/Panel/Margin/VBox/DetailPanel/DetailMargin/DetailVBox/UseActions
 
 var _detail_override: String = ""
 var _selected_consumable: String = ""
+## A3：背包满时进入取舍模式，点击背包物品即丢弃该件。
+var _overflow_mode: bool = false
 
 
 func _ready() -> void:
 	visible = false
 	close_button.pressed.connect(close)
+	recovery_button.pressed.connect(_on_recovery_pressed)
 	GameManager.player_moved.connect(_on_player_changed)
+	GameManager.inventory_overflow_changed.connect(_on_overflow_changed)
 
 
 func open() -> void:
 	_detail_override = ""
 	_selected_consumable = ""
+	_overflow_mode = false
 	_clear_use_actions()
 	refresh()
 	visible = true
@@ -46,6 +54,9 @@ func open() -> void:
 
 func close() -> void:
 	if not visible:
+		return
+	if _overflow_mode and GameManager.has_pending_item_overflow():
+		detail_label.text = "背包已满：先点击一件物品丢弃，或选择放弃新物品。"
 		return
 	_selected_consumable = ""
 	_clear_use_actions()
@@ -64,9 +75,13 @@ func _unhandled_input(event: InputEvent) -> void:
 func refresh() -> void:
 	if GameManager.player == null:
 		return
+	_overflow_mode = GameManager.has_pending_item_overflow()
 	_build_equipment()
 	_build_inventory()
-	if _detail_override.is_empty():
+	_update_recovery_row()
+	if _overflow_mode:
+		_show_overflow_actions()
+	elif _detail_override.is_empty():
 		detail_label.text = DETAIL_DEFAULT
 	else:
 		detail_label.text = _detail_override
@@ -75,6 +90,63 @@ func refresh() -> void:
 func _on_player_changed() -> void:
 	if visible:
 		refresh()
+
+
+func _on_overflow_changed() -> void:
+	if visible:
+		refresh()
+
+
+func _update_recovery_row() -> void:
+	var info := GameManager.stolen_item_recovery_info()
+	var available := bool(info.get("available", false))
+	recovery_row.visible = available
+	if not available:
+		return
+	var item_name := String(info.get("item_name", ""))
+	recovery_label.text = "失物「%s」：%s" % [item_name, String(info.get("hint", ""))]
+	var can_attempt := bool(info.get("can_attempt", false))
+	recovery_button.disabled = not can_attempt
+	recovery_button.text = "本回合已追查" if bool(info.get("attempted", false)) else "追查失物（免费）"
+	recovery_button.tooltip_text = "感知检定 DC 12；成功归还「%s」并使影的好感 -3。" % item_name
+
+
+func _on_recovery_pressed() -> void:
+	var result := GameManager.recover_stolen_item()
+	_detail_override = String(result.get("message", "现在无法追查失物。"))
+	_selected_consumable = ""
+	_clear_use_actions()
+	refresh()
+	detail_label.text = _detail_override
+
+
+func _show_overflow_actions() -> void:
+	_clear_use_actions()
+	var pending := GameManager.current_item_overflow()
+	var item_id := String(pending.get("item_id", ""))
+	var count := maxi(1, int(pending.get("count", 1)))
+	var item_name := GameManager.player.item_display_name(item_id)
+	use_actions.visible = true
+	var label := Label.new()
+	label.text = "背包已满：获得「%s」×%d。点击上方背包物品丢弃一件，或" % [item_name, count]
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(0.94, 0.72, 0.48))
+	use_actions.add_child(label)
+	var abandon := Button.new()
+	abandon.text = "放弃「%s」" % item_name
+	abandon.add_theme_font_size_override("font_size", 13)
+	abandon.tooltip_text = "按 A3：拒绝丢弃时，新获得的物品直接丢失。"
+	abandon.pressed.connect(_on_abandon_overflow.bind(item_id))
+	use_actions.add_child(abandon)
+
+
+func _on_abandon_overflow(item_id: String) -> void:
+	var result := GameManager.resolve_item_overflow("")
+	_detail_override = String(result.get("message", ""))
+	refresh()
+	detail_label.text = _detail_override
+	if bool(result.get("ok", false)) and not GameManager.has_pending_item_overflow():
+		close()
 
 
 func _build_equipment() -> void:
@@ -112,7 +184,11 @@ func _build_inventory() -> void:
 			counts[item_id] = 0
 			order.append(item_id)
 		counts[item_id] = int(counts[item_id]) + 1
-	bag_title.text = "背包 · %d 件" % player.inventory.size()
+	bag_title.text = "背包 · %d / %d 格 · %d 件" % [
+		player.inventory_slot_count(), ActorState.INVENTORY_SLOT_LIMIT, player.inventory.size(),
+	]
+	if _overflow_mode:
+		bag_title.text += " · 已满，需取舍"
 	_clear_container(grid)
 	grid.columns = 3
 	if order.is_empty():
@@ -150,6 +226,8 @@ func _slot_text(item_id: String, count: int, equipped: bool) -> String:
 	var item_name := String(record.get("name", item_id))
 	var type_id := String(record.get("type", ""))
 	var heading := item_name if count <= 1 else "%s ×%d" % [item_name, count]
+	if _overflow_mode and not equipped:
+		return "%s\n点击丢弃 · 腾出格位" % heading
 	if equipped:
 		return "%s\n已装备 · 点击卸下" % heading
 	if type_id == "equipment":
@@ -246,6 +324,9 @@ func _on_item_unhovered(_item_id: String) -> void:
 
 
 func _on_inventory_pressed(item_id: String) -> void:
+	if _overflow_mode:
+		_discard_for_overflow(item_id)
+		return
 	var record := DataManager.get_record("items", item_id)
 	if String(record.get("type", "")) == "consumable":
 		_selected_consumable = item_id
@@ -322,6 +403,19 @@ func _clear_selection() -> void:
 	_detail_override = ""
 	_clear_use_actions()
 	detail_label.text = DETAIL_DEFAULT
+
+
+func _discard_for_overflow(item_id: String) -> void:
+	var result := GameManager.resolve_item_overflow(item_id)
+	if not bool(result.get("ok", false)):
+		_detail_override = String(result.get("message", "无法丢弃这件物品。"))
+		detail_label.text = _detail_override
+		return
+	_detail_override = String(result.get("message", ""))
+	refresh()
+	detail_label.text = _detail_override
+	if not GameManager.has_pending_item_overflow():
+		close()
 
 
 func _clear_use_actions() -> void:

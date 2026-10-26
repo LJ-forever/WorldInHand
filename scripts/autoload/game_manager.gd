@@ -19,6 +19,8 @@ signal fog_changed
 signal scout_finished(report: Dictionary)
 signal companion_changed
 signal inventory_changed
+## 背包已满、有物品等待玩家丢弃取舍时发出；HUD 据此打开背包页。
+signal inventory_overflow_changed
 signal dice_rolled(payload: Dictionary)
 signal intro_dismissed
 signal world_log_changed
@@ -86,6 +88,9 @@ var player_victory_tier: String = ""
 var map: MapData = null
 var player: ActorState = null
 var selected_map_config: Dictionary = {}
+## A3：背包 8 格已满时，新获得的物品在这里排队。
+## 玩家在背包页丢弃一件或选择放弃后，队列才会继续处理。
+var pending_item_overflows: Array[Dictionary] = []
 
 ## 玩家当前正在画 / 已画完的原始笔迹（世界坐标）。
 var drawn_stroke: PackedVector2Array = PackedVector2Array()
@@ -213,6 +218,7 @@ func start_new_game(player_id: String, map_config: Dictionary = {}) -> bool:
 	_combat_context.clear()
 	_pending_end_turn_after_combat = false
 	_goal_victory_resolved = false
+	pending_item_overflows.clear()
 	companion = CompanionAI.new()
 	companion_start_cell_id = _pick_companion_start(map, map.start_id)
 	if not companion.setup(DataManager.get_record("characters", ai_character_id), ai_hidden_task_id, companion_start_cell_id, RNGManager.get_stream("ai")):
@@ -587,13 +593,22 @@ func _run_companion_turn(goal_race: bool = false, defer_end_turn: bool = true) -
 	if companion.alive and player != null:
 		var milestone := companion.check_favor_milestone()
 		if bool(milestone.get("triggered", false)):
-			player.add_item(String(milestone.get("gift_item", "supply")), 1)
+			var gift_item := String(milestone.get("gift_item", "supply"))
+			var gift := grant_item(gift_item, 1, "同伴信赖")
 			var milestone_message := String(milestone.get("message", ""))
+			if bool(gift.get("queued", false)):
+				milestone_message += " 背包已满，请在背包页取舍。"
 			_add_world_log(milestone_message)
 			_append_last_move(milestone_message)
 			world_notice.emit(milestone_message)
 			inventory_changed.emit()
 	companion_changed.emit()
+
+	if bool(report.get("player_defeated", false)):
+		var defeat_reason := String(report.get("defeat_reason", "同伴完成了她的互斥目标。"))
+		_add_world_log(defeat_reason)
+		_finish(false, defeat_reason)
+		return
 
 	var combat: Dictionary = report.get("combat", {})
 	if companion.alive and not combat.is_empty():
@@ -1095,8 +1110,10 @@ func apply_companion_favor(delta: int) -> Dictionary:
 	var milestone := companion.check_favor_milestone()
 	if bool(milestone.get("triggered", false)) and player != null:
 		var gift_item := String(milestone.get("gift_item", "supply"))
-		player.add_item(gift_item, 1)
+		var gift := grant_item(gift_item, 1, "同伴信赖")
 		var milestone_message := String(milestone.get("message", ""))
+		if bool(gift.get("queued", false)):
+			milestone_message += " 背包已满，请在背包页取舍。"
 		result["milestone"] = true
 		result["milestone_id"] = String(milestone.get("id", ""))
 		result["milestone_message"] = milestone_message
@@ -1166,6 +1183,160 @@ func rest() -> void:
 	player.heal(1)
 	player_moved.emit()
 	autosave()
+
+
+## ---------------- 背包容量 / 失物追查 ----------------
+
+## A3：所有玩法内获得物品都走这里。背包 8 格已满时先排队，
+## HUD 在安全边界打开背包页，让玩家丢弃一件物品或放弃新物品。
+func grant_item(item_id: String, count: int = 1, source: String = "") -> Dictionary:
+	if player == null or item_id.is_empty() or count <= 0:
+		return {"ok": false, "added": 0, "queued": false, "message": "当前无法获得物品。"}
+	var item_name := player.item_display_name(item_id)
+	if not player.can_add_item(item_id):
+		var queued_count := maxi(1, count)
+		pending_item_overflows.append({
+			"item_id": item_id,
+			"count": queued_count,
+			"source": source,
+		})
+		var queued_message := "发现「%s」×%d，但背包已满：请在背包页丢弃一件，或放弃它。" % [
+			item_name, queued_count,
+		]
+		inventory_overflow_changed.emit()
+		return {
+			"ok": true,
+			"added": 0,
+			"queued": true,
+			"item_id": item_id,
+			"message": queued_message,
+		}
+	player.add_item(item_id, count)
+	inventory_changed.emit()
+	return {
+		"ok": true,
+		"added": count,
+		"queued": false,
+		"item_id": item_id,
+		"message": "获得「%s」×%d。" % [item_name, count],
+	}
+
+
+func has_pending_item_overflow() -> bool:
+	return not pending_item_overflows.is_empty()
+
+
+func current_item_overflow() -> Dictionary:
+	if pending_item_overflows.is_empty():
+		return {}
+	return pending_item_overflows[0].duplicate(true)
+
+
+## discard_item_id 为空表示拒绝新物品，按 A3 直接丢失；否则从背包丢弃 1 件。
+func resolve_item_overflow(discard_item_id: String = "") -> Dictionary:
+	if player == null or pending_item_overflows.is_empty():
+		return {"ok": false, "message": "当前没有待处理的背包溢出。"}
+	var entry: Dictionary = pending_item_overflows[0]
+	var item_id := String(entry.get("item_id", ""))
+	var count := maxi(1, int(entry.get("count", 1)))
+	var item_name := player.item_display_name(item_id)
+	var message := ""
+	if discard_item_id.is_empty():
+		pending_item_overflows.remove_at(0)
+		message = "你放弃了「%s」×%d。" % [item_name, count]
+	else:
+		if not player.inventory.has(discard_item_id):
+			return {"ok": false, "message": "背包里没有这件物品，无法丢弃。"}
+		var discarded_name := player.item_display_name(discard_item_id)
+		player.inventory.erase(discard_item_id)
+		player.add_item(item_id, count)
+		pending_item_overflows.remove_at(0)
+		message = "丢弃「%s」×1，收下「%s」×%d。" % [discarded_name, item_name, count]
+	_add_world_log(message)
+	inventory_changed.emit()
+	inventory_overflow_changed.emit()
+	world_notice.emit(message)
+	autosave()
+	return {
+		"ok": true,
+		"item_id": item_id,
+		"discarded": discard_item_id,
+		"message": message,
+		"remaining": pending_item_overflows.size(),
+	}
+
+
+## D-25：被影偷走后，每回合可免费进行一次感知检定 DC 12。
+func stolen_item_recovery_info() -> Dictionary:
+	if companion == null or not companion.has_stolen_item():
+		return {"available": false}
+	var attempted := companion.has_attempted_recovery(round_index)
+	var can_attempt := state == State.PLAYING \
+		and not intro_open and not is_moving and not movement_paused and not attempted
+	var item_name := companion.stolen_item_name()
+	var hint := "每回合可免费进行一次感知检定（DC 12，不消耗 AP）。"
+	if attempted:
+		hint = "本回合已经追查过，下回合可再免费检定一次。"
+	elif not can_attempt:
+		hint = "当前状态下不能追查；结束移动或事件后再试。"
+	return {
+		"available": true,
+		"item_id": companion.stolen_item_id(),
+		"item_name": item_name,
+		"attempted": attempted,
+		"can_attempt": can_attempt,
+		"hint": hint,
+	}
+
+
+func recover_stolen_item() -> Dictionary:
+	if state != State.PLAYING or player == null or companion == null:
+		return {"ok": false, "message": "现在无法追查失物。"}
+	if intro_open or is_moving or movement_paused:
+		return {"ok": false, "message": "移动或事件处理中不能追查失物。"}
+	if not companion.has_stolen_item():
+		return {"ok": false, "message": "你身上没有需要追回的失物。"}
+	var result := companion.attempt_recover_stolen_item(player, round_index)
+	if not bool(result.get("ok", false)):
+		return result
+	var dice: Array = result.get("dice", [])
+	var total := int(result.get("total", 0))
+	var natural := int(result.get("natural", 0))
+	dice_rolled.emit({
+		"title": "追查失物",
+		"kind": "check",
+		"kind_label": "免费 · 感知检定",
+		"dice": [int(dice[0]), int(dice[1])],
+		"sides": 6,
+		"modifier": total - natural,
+		"total": total,
+		"dc": int(result.get("dc", CompanionAI.RECOVERY_DC)),
+		"level_name": String(result.get("level_name", "")),
+		"detail": "%s = %d vs DC %d · %s" % [
+			String(result.get("formula", "")), total,
+			int(result.get("dc", CompanionAI.RECOVERY_DC)),
+			String(result.get("level_name", "")),
+		],
+	})
+	var message := String(result.get("message", ""))
+	if bool(result.get("success", false)):
+		var granted := grant_item(String(result.get("item_id", "")), 1, "追回失物")
+		var grant_message := String(granted.get("message", "")).strip_edges()
+		if not grant_message.is_empty():
+			message += " " + grant_message
+		if bool(result.get("faction_changed", false)):
+			message += " 她的立场变为%s。" % companion.faction_name()
+		_add_world_log(message)
+		last_move_message = message
+		world_notice.emit(message)
+	elif not message.is_empty():
+		last_move_message = message
+		world_notice.emit(message)
+	companion_changed.emit()
+	player_moved.emit()
+	autosave()
+	result["message"] = message
+	return result
 
 
 ## 背包里可以立即使用的消耗品选项。空数组表示该物品不能主动使用。
@@ -1618,8 +1789,6 @@ func _on_event_finished(_event_id: String) -> void:
 		_finish(false, reason)
 		return
 	if bool(outcome.get("goal", false)):
-		if companion != null and companion.accept_player_goal(player, player.has_status("trapped")):
-			_add_world_log("%s看着你抵达终点，神情有些复杂。" % companion_name())
 		_finish(true, "你在第 %d 回合通过终点守卫，抵达终点。" % round_index)
 		return
 	if player != null and player.status_blocks_movement():
@@ -2160,6 +2329,7 @@ func build_save_data() -> Dictionary:
 			"position_exposed_until_round": position_exposed_until_round,
 			"vision_boost_cells": vision_boost_cells,
 			"vision_boost_hold_rounds": vision_boost_hold_rounds,
+			"pending_item_overflows": pending_item_overflows.duplicate(true),
 		},
 	}
 
@@ -2255,6 +2425,19 @@ func restore_save_data(data: Dictionary) -> Dictionary:
 	position_exposed_until_round = int((game_data as Dictionary).get("position_exposed_until_round", 0))
 	vision_boost_cells = maxf(0.0, float((game_data as Dictionary).get("vision_boost_cells", 0.0)))
 	vision_boost_hold_rounds = maxi(0, int((game_data as Dictionary).get("vision_boost_hold_rounds", 0)))
+	pending_item_overflows.clear()
+	for raw_overflow in (game_data as Dictionary).get("pending_item_overflows", []):
+		if not (raw_overflow is Dictionary):
+			continue
+		var overflow_entry: Dictionary = raw_overflow
+		var overflow_item_id := String(overflow_entry.get("item_id", ""))
+		if overflow_item_id.is_empty() or not DataManager.has_record("items", overflow_item_id):
+			continue
+		pending_item_overflows.append({
+			"item_id": overflow_item_id,
+			"count": maxi(1, int(overflow_entry.get("count", 1))),
+			"source": String(overflow_entry.get("source", "")),
+		})
 	var saved_position = (game_data as Dictionary).get("visual_position", [])
 	if saved_position is Array and (saved_position as Array).size() >= 2:
 		visual_position = Vector2(float(saved_position[0]), float(saved_position[1]))
@@ -2334,13 +2517,43 @@ func _finish(win: bool, reason: String) -> void:
 	movement_paused = false
 	EventManager.end_action()
 	_clear_path_data()
-	var final_reason := _finalize_victory(reason) if win else reason
-	if not win and companion != null and companion.reached_goal:
+	var final_win := win
+	var final_reason := reason
+	if companion != null and companion.alive and player != null:
+		if win:
+			# 到达终点的瞬间先判观察型与互斥型任务；敌方薇拉在窗口内可把胜利改判为失败。
+			var goal_result: Dictionary = companion.accept_player_goal(player, player.has_status("trapped"))
+			if bool(goal_result.get("completed", false)):
+				_log_companion_task_completion()
+			if bool(goal_result.get("player_defeated", false)):
+				final_win = false
+				final_reason = String(goal_result.get("defeat_reason", "%s完成了她的互斥目标。" % companion_name()))
+		else:
+			var at_goal := map != null and player.cell_id == map.goal_id
+			var end_result: Dictionary = companion.accept_run_end(player, at_goal)
+			if bool(end_result.get("completed", false)):
+				_log_companion_task_completion()
+				var summary := String(end_result.get("summary", "")).strip_edges()
+				if not summary.is_empty():
+					final_reason += " " + summary
+	if final_win:
+		final_reason = _finalize_victory(final_reason)
+	if not final_win and companion != null and companion.reached_goal:
 		final_reason += " 同伴已经抵达终点。"
 	# 单槽自动存档代表“还能继续的这一局”；死亡或胜利后不再提供继续入口。
 	SaveManager.clear_save(SaveManager.DEFAULT_SLOT)
 	_set_state(State.GAME_OVER)
-	game_over.emit(win, final_reason)
+	game_over.emit(final_win, final_reason)
+
+
+func _log_companion_task_completion() -> void:
+	if companion == null:
+		return
+	var task := companion.task
+	if EventManager.get_reveal_level() >= 3 and not task.is_empty():
+		_add_world_log("%s完成了她的计划：%s。" % [companion_name(), String(task.get("name", ""))])
+	else:
+		_add_world_log("%s了结了一桩心事。" % companion_name())
 
 
 func _set_state(new_state: int) -> void:

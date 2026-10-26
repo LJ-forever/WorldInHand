@@ -15,6 +15,8 @@ const INTERACT_RANGE := 1
 ## 支援型同伴愿意独立行动、但仍保持可支援距离的上限（BFS 格数）。
 const SUPPORT_NEAR_DISTANCE := 3
 const TRAP_STATUS_ID := "trapped"
+const RECOVERY_DC := 12
+const RECOVERY_FAVOR_PENALTY := 3
 const HELPFUL_ITEMS := ["herb", "supply", "potion"]
 const TRADABLE_ITEMS := ["pelt", "herb", "ancient_coin", "rare_charm"]
 
@@ -60,6 +62,22 @@ var _last_combat: Dictionary = {}
 var _just_reached_goal: bool = false
 var _faction_at_start: String = "neutral"
 var _favor_at_start: int = 0
+## 林鸮任务用：她自己“看见”过的格子。只在 AI 侧记录，不写玩家迷雾。
+var _scouted_cells: Dictionary = {}
+## 起点→终点最短路上、终点前的目标格（D-34）。读档后按地图重建。
+var _target_path_cells: Array[int] = []
+var _map_task_revealed_count: int = 0
+var _goal_revealed_by_ai: bool = false
+var _goal_info_shared: bool = false
+## 竞争型信息任务已经无法完成（玩家先看到终点，或她主动分享过）。
+var _task_failed: bool = false
+## 本回合是否因互斥目标直接判玩家失败；由 GameManager 在回合结束后读取。
+var _player_defeated: bool = false
+var _defeat_reason: String = ""
+## 影得手后留在自己身上的物品；追回成功前一直记录，供 D-25 的免费感知检定。
+var _stolen_item_id: String = ""
+## 玩家最近一次尝试追回失物的回合；每回合最多 1 次。
+var _recovery_attempt_round: int = -10
 
 
 func setup(character_record: Dictionary, hidden_task_id: String, start_cell: int, rng: RandomNumberGenerator) -> bool:
@@ -163,6 +181,15 @@ func to_dict() -> Dictionary:
 		"just_reached_goal": _just_reached_goal,
 		"faction_at_start": _faction_at_start,
 		"favor_at_start": _favor_at_start,
+		"scouted_cells": _scouted_cell_ids(),
+		"map_task_revealed_count": _map_task_revealed_count,
+		"goal_revealed_by_ai": _goal_revealed_by_ai,
+		"goal_info_shared": _goal_info_shared,
+		"task_failed": _task_failed,
+		"player_defeated": _player_defeated,
+		"defeat_reason": _defeat_reason,
+		"stolen_item_id": _stolen_item_id,
+		"recovery_attempt_round": _recovery_attempt_round,
 	}
 
 
@@ -215,6 +242,20 @@ func load_dict(data: Dictionary) -> bool:
 	_just_reached_goal = bool(data.get("just_reached_goal", false))
 	_faction_at_start = String(data.get("faction_at_start", "neutral"))
 	_favor_at_start = int(data.get("favor_at_start", 0))
+	_scouted_cells.clear()
+	var scouted = data.get("scouted_cells", {})
+	if scouted is Dictionary:
+		for cell_id in scouted.keys():
+			_scouted_cells[int(cell_id)] = true
+	_target_path_cells.clear()
+	_map_task_revealed_count = int(data.get("map_task_revealed_count", 0))
+	_goal_revealed_by_ai = bool(data.get("goal_revealed_by_ai", false))
+	_goal_info_shared = bool(data.get("goal_info_shared", false))
+	_task_failed = bool(data.get("task_failed", false))
+	_player_defeated = bool(data.get("player_defeated", false))
+	_defeat_reason = String(data.get("defeat_reason", ""))
+	_stolen_item_id = String(data.get("stolen_item_id", ""))
+	_recovery_attempt_round = int(data.get("recovery_attempt_round", -10))
 	_rng = RNGManager.get_stream("ai")
 	return true
 
@@ -244,6 +285,8 @@ func take_turn(map: MapData, player: ActorState, current_round: int, player_can_
 	_last_combat = {}
 	_just_completed = false
 	_just_reached_goal = false
+	_player_defeated = false
+	_defeat_reason = ""
 	_faction_at_start = faction
 	_favor_at_start = favor
 	_support_cooldown = maxi(0, _support_cooldown - 1)
@@ -295,8 +338,12 @@ func take_turn(map: MapData, player: ActorState, current_round: int, player_can_
 				_do_goal(map, player, current_round)
 
 	# 友方队友会周期性共享沿途记忆；不扩大玩家圆视野，只留下“曾获得信息”的地块。
-	if alive and faction == "friendly" and _shared_cooldown <= 0:
+	# 「抢先揭示终点」要求她未主动分享，因此在该任务完成前不共享终点信息。
+	var save_share := _task_type() == "reveal_goal_first" and not _task_completed
+	if alive and faction == "friendly" and _shared_cooldown <= 0 and not save_share:
 		var radius := float(actor.scout_reveal_radius()) * map.average_site_spacing
+		if _task_type() == "reveal_goal_first" and _cell_in_radius(map, map.goal_id, actor.cell_id, radius):
+			_goal_info_shared = true
 		report["shared_reveal"] = {
 			"center": actor.cell_id,
 			"radius": radius,
@@ -344,6 +391,8 @@ func _finish_report(report: Dictionary, map: MapData, was_visible: bool) -> Dict
 	report["faction_before"] = _faction_at_start
 	report["faction"] = faction
 	report["favor"] = favor
+	report["player_defeated"] = _player_defeated
+	report["defeat_reason"] = _defeat_reason
 	return report
 
 
@@ -467,19 +516,17 @@ func _choose_intent(map: MapData, player: ActorState) -> String:
 				"share_herb_to_player", "player_alive_at_goal", "player_poisoned_and_survived", "favor_at_goal":
 					return "support"
 				"reveal_regions_before_goal":
-					# 友好同伴的地图任务也先回到可交流距离，再在玩家附近侦察；
-					# 否则她会从开局位置一直站着，玩家既看不到她移动，也听不见台词。
-					if not _task_completed and map.graph_distance(actor.cell_id, player.cell_id) > SUPPORT_NEAR_DISTANCE:
-						return "support"
-					return "scout" if not _task_completed else "goal"
+					# 她的目标是终点前的最短路区段；边走边侦察，完成后才赶路。
+					return "goal" if _task_completed else "scout"
 				"hold_tradable_quest_item_at_goal":
 					return "goal" if _has_tradable() else "explore"
 				_:
 					return "goal"
 		"enemy":
 			# 敌方优先完成互斥任务；任务了结或目标不在手边时，靠近并袭击玩家。
-			if (task_type == "steal_equipment" or task_type == "player_trapped_at_window") \
-					and not _task_completed:
+			if task_type == "steal_equipment" and not _task_completed:
+				return "hunt"
+			if task_type == "player_trapped_at_window" and not _task_completed and not _trap_used:
 				return "hunt"
 			var distance := map.graph_distance(actor.cell_id, player.cell_id)
 			if distance >= 0 and distance <= INTERACT_RANGE and _can_attack():
@@ -490,9 +537,9 @@ func _choose_intent(map: MapData, player: ActorState) -> String:
 		_:
 			match task_type:
 				"reveal_goal_first":
-					if not _task_completed and map.graph_distance(actor.cell_id, map.goal_id) <= 4:
-						return "scout"
-					return "goal"
+					if _task_completed or _task_failed:
+						return "goal"
+					return "scout"
 				"reach_goal_first":
 					return "goal"
 				_:
@@ -641,22 +688,42 @@ func _do_explore(map: MapData, player: ActorState, current_round: int) -> void:
 
 
 func _do_scout(map: MapData, player: ActorState) -> void:
-	# 侦察消耗 1 AP，不移动；为任务累计一次“独立侦察”。
-	if actor.ap_deci >= 10:
-		actor.ap_deci -= 10
+	_ensure_map_tasks(map)
+	var task_type := _task_type()
+	var moved := 0
+	if not _task_completed:
+		var travel_target := -1
+		if task_type == "reveal_regions_before_goal":
+			travel_target = _nearest_unrevealed_target(map)
+			if travel_target >= 0 and _within_scout_reveal(map, travel_target):
+				travel_target = -1
+		elif task_type == "reveal_goal_first" and not _goal_revealed_by_ai and not _task_failed:
+			if not _within_scout_reveal(map, map.goal_id):
+				travel_target = map.goal_id
+		if travel_target >= 0:
+			# 终点格要留给终点守卫，不直接踏进去。
+			moved = _approach(map, travel_target, travel_target == map.goal_id)
+			_mark_revealed(map, actor.cell_id, 1)
+	if actor.ap_deci < 10:
+		activity = "赶往观察点" if moved > 0 else "辨认地形"
+		if moved > 0:
+			last_action = "%s朝更有利观察的位置移动了 %d 格。" % [_name(), moved]
+		else:
+			last_action = "%s停下脚步，打量四周可观察的位置。" % _name()
+		return
+
+	# 侦察消耗 1 AP，不移动；只统计她真正完成的侦察。
+	actor.ap_deci -= 10
 	_scout_count += 1
+	_mark_revealed(map, actor.cell_id, actor.scout_reveal_radius())
+	var completed_now := _check_map_task_completion(map, player)
 	activity = "辨认地形"
-	last_action = "%s停下脚步，仔细辨认周围的地形。" % _name()
-	if _task_type() == "reveal_regions_before_goal":
-		var target_count := int(task.get("completion", {}).get("count", 3))
-		if _scout_count >= target_count:
-			_complete_task()
-			last_action = "%s收起地图，像是记全了终点前的路。" % _name()
-	elif _task_type() == "reveal_goal_first":
-		var goal_distance := map.graph_distance(actor.cell_id, map.goal_id)
-		if goal_distance >= 0 and goal_distance <= 4:
-			_complete_task()
-			last_action = "%s远远望见了终点，却没有对你说什么。" % _name()
+	if completed_now and task_type == "reveal_regions_before_goal":
+		last_action = "%s收起地图，像是记全了终点前的路。" % _name()
+	elif completed_now and task_type == "reveal_goal_first":
+		last_action = "%s远远望见了终点，却没有对你说什么。" % _name()
+	else:
+		last_action = "%s停下脚步，仔细辨认周围的地形。" % _name()
 
 
 func _do_rest() -> void:
@@ -750,6 +817,7 @@ func _follow_path(map: MapData, path: Array[int], max_steps: int) -> int:
 		actor.ap_deci -= cost
 		actor.cell_id = next_id
 		moved += 1
+		_mark_revealed(map, next_id, 1)
 		_collect_poi(map, next_id)
 	return moved
 
@@ -793,6 +861,10 @@ func _loot_for_cell(cell: MapData.Cell) -> String:
 func _interact_support(player: ActorState, current_round: int) -> bool:
 	var task_type := _task_type()
 	if task_type == "share_herb_to_player" and actor.has_item("herb"):
+		if not player.can_add_item("herb"):
+			activity = "把草药又收了回去"
+			last_action = "%s想把草药递给你，但你的背包已经塞满了。" % _name()
+			return true
 		actor.remove_item("herb", 1)
 		player.add_item("herb", 1)
 		_change_favor(1)
@@ -843,7 +915,7 @@ func _interact_hostile(map: MapData, player: ActorState, current_round: int) -> 
 	if _task_type() == "steal_equipment" and not _task_completed:
 		_try_steal(player)
 		return
-	if _task_type() == "player_trapped_at_window" and not _task_completed:
+	if _task_type() == "player_trapped_at_window" and not _task_completed and not _trap_used:
 		_try_trap(player, current_round)
 		return
 	if faction == "enemy":
@@ -856,35 +928,149 @@ func _interact_hostile(map: MapData, player: ActorState, current_round: int) -> 
 func _try_steal(player: ActorState) -> void:
 	actor.ap_deci = maxi(0, actor.ap_deci - 10)
 	_hostile_cooldown = 3
-	var roll := _roll_2d6() + actor.luck() + actor.equipment_check_bonus("luck")
-	var dc := 10 + player.perception() + player.status_check_modifier("perception")
+	# 影的盗贼词条 +2；偷窃 DC = 8 + 玩家感知 + 装备属性加值总和（D-31）。
+	var roll := _roll_2d6() + (2 if actor.has_trait("thief") else 0)
+	var dc := 8 + player.perception() + player.equipment_defense_bonus()
 	if roll < dc:
-		_change_favor(-1)
+		_change_favor(-2)
 		activity = "若无其事地走开"
 		last_action = "你察觉到%s的手伸向行囊，及时避开了。" % _name()
 		return
-	var candidates: Array[String] = []
-	for item_id in player.equipment:
-		var record := DataManager.get_record("items", item_id)
-		if not record.is_empty() and not bool(record.get("quest_item", false)):
-			candidates.append(item_id)
+	var candidates := _theft_candidates(player)
 	if candidates.is_empty():
-		for item_id in player.inventory:
-			var record := DataManager.get_record("items", item_id)
-			if not record.is_empty() and not bool(record.get("quest_item", false)):
-				candidates.append(item_id)
-	if candidates.is_empty():
-		_change_favor(-1)
 		activity = "无功而返"
 		last_action = "%s摸了半天，只摸到你空荡荡的行囊。" % _name()
 		return
 	var stolen := candidates[_rng.randi_range(0, candidates.size() - 1)]
 	player.remove_item(stolen, 1)
-	_add_item(stolen)
-	_change_favor(-5)
-	_complete_task()
+	if not _add_item(stolen):
+		# 影自己的行囊也塞满了：这次偷窃不成立，把物品还回去，任务保持未完成。
+		player.add_item(stolen, 1)
+		activity = "没能塞进自己的行囊"
+		last_action = "%s得手后才发现自己的行囊也满了，只得把「%s」放了回去。" % [_name(), _str_item_name(stolen)]
+		return
+	_stolen_item_id = stolen
+	_recovery_attempt_round = -10
+	var result := _complete_exclusive_task(
+		"%s借擦肩而过的机会偷走了你的「%s」。你失去了继续前进的关键装备。" % [_name(), _str_item_name(stolen)]
+	)
 	activity = "揣走了你的东西"
 	last_action = "%s借着擦肩而过的机会，拿走了你的「%s」。" % [_name(), _str_item_name(stolen)]
+	if bool(result.get("faction_changed", false)) or bool(result.get("favor_changed", false)):
+		last_action += "她的眼神也随之变了。"
+
+
+## 偷窃目标优先级：武器/饰品 → 其他装备 → 消耗品；不偷金币、材料与任务物品（D-31）。
+func _theft_candidates(player: ActorState) -> Array[String]:
+	var priority: Array[String] = []
+	var equipment_candidates: Array[String] = []
+	var consumables: Array[String] = []
+	var seen: Dictionary = {}
+	var pools: Array = [player.equipment, player.inventory]
+	for pool in pools:
+		for item_id_value in pool:
+			var item_id := String(item_id_value)
+			if seen.has(item_id):
+				continue
+			var record := DataManager.get_record("items", item_id)
+			if record.is_empty() or bool(record.get("quest_item", false)):
+				continue
+			seen[item_id] = true
+			var item_type := String(record.get("type", ""))
+			if item_type == "equipment":
+				var effects: Dictionary = record.get("effects", {})
+				var weapon_or_charm := int(effects.get("combat", 0)) != 0 \
+					or int(effects.get("luck_event", 0)) != 0
+				if weapon_or_charm:
+					priority.append(item_id)
+				else:
+					equipment_candidates.append(item_id)
+			elif item_type == "consumable":
+				consumables.append(item_id)
+	if not priority.is_empty():
+		return priority
+	if not equipment_candidates.is_empty():
+		return equipment_candidates
+	return consumables
+
+
+## 影身上是否还带着从玩家处偷走的物品。
+func has_stolen_item() -> bool:
+	return not _stolen_item_id.is_empty() and actor != null and actor.has_item(_stolen_item_id)
+
+
+func stolen_item_id() -> String:
+	return _stolen_item_id if has_stolen_item() else ""
+
+
+func stolen_item_name() -> String:
+	var item_id := stolen_item_id()
+	return "" if item_id.is_empty() else _str_item_name(item_id)
+
+
+func has_attempted_recovery(current_round: int) -> bool:
+	return _recovery_attempt_round == current_round
+
+
+## D-25：玩家每回合可免费进行一次感知检定 DC 12，追回被影偷走的物品。
+## 成功只归还物品并把影的好感 −3；她的互斥任务保持已完成，不会回滚。
+func attempt_recover_stolen_item(player: ActorState, current_round: int) -> Dictionary:
+	if player == null:
+		return {"ok": false, "success": false, "message": "当前没有可追查的对象。", "dc": RECOVERY_DC}
+	if not has_stolen_item():
+		_stolen_item_id = ""
+		return {"ok": false, "success": false, "message": "你身上没有需要追回的失物。", "dc": RECOVERY_DC}
+	if _recovery_attempt_round == current_round:
+		return {
+			"ok": false,
+			"success": false,
+			"message": "本回合已经追查过她的行踪，下回合可以再试一次。",
+			"dc": RECOVERY_DC,
+		}
+	_recovery_attempt_round = current_round
+	var item_id := _stolen_item_id
+	var item_name := _str_item_name(item_id)
+	var dice := RNGManager.roll_2d6("scout")
+	var natural := int(dice[0]) + int(dice[1])
+	var breakdown := player.check_breakdown("perception")
+	var total := natural + int(breakdown["base"]) + int(breakdown["equipment"]) + int(breakdown["status"])
+	var formula := player.check_formula_text("perception", natural, "感知")
+	var success := total >= RECOVERY_DC
+	var result := {
+		"ok": true,
+		"success": success,
+		"dice": [int(dice[0]), int(dice[1])],
+		"natural": natural,
+		"base": int(breakdown["base"]),
+		"equipment": int(breakdown["equipment"]),
+		"status": int(breakdown["status"]),
+		"equipment_parts": breakdown.get("equipment_parts", []),
+		"status_parts": breakdown.get("status_parts", []),
+		"formula": formula,
+		"total": total,
+		"dc": RECOVERY_DC,
+		"item_id": item_id,
+		"item_name": item_name,
+		"favor_changed": false,
+		"faction_changed": false,
+	}
+	if not success:
+		result["level_name"] = "失败"
+		result["message"] = "你循着她留下的痕迹翻找了一阵，没能找回「%s」。" % item_name
+		return result
+	# 物品离开影的身上；GameManager 负责放入玩家背包并按 A3 处理背包已满。
+	actor.remove_item(item_id, 1)
+	_stolen_item_id = ""
+	var change := _change_favor(-RECOVERY_FAVOR_PENALTY)
+	result["level_name"] = "成功"
+	result["favor_changed"] = bool(change.get("favor_changed", false))
+	result["faction_changed"] = bool(change.get("faction_changed", false))
+	result["faction"] = faction
+	result["favor"] = favor
+	result["message"] = "你追上%s，趁她不备夺回了「%s」。（她的好感 -%d）" % [
+		_name(), item_name, RECOVERY_FAVOR_PENALTY,
+	]
+	return result
 
 
 func _try_trap(player: ActorState, current_round: int) -> void:
@@ -894,17 +1080,17 @@ func _try_trap(player: ActorState, current_round: int) -> void:
 		return
 	actor.ap_deci = maxi(0, actor.ap_deci - 10)
 	_hostile_cooldown = 4
+	# 薇拉 2d6 + max(交涉, 战斗) vs 8 + 玩家感知 + 装备属性加值总和（D-32）。
 	var roll := _roll_2d6() + maxi(actor.combat(), actor.negotiation())
-	var dc := 8 + player.perception() + player.status_check_modifier("perception")
+	var dc := 8 + player.perception() + player.equipment_defense_bonus()
 	if roll < dc:
-		_change_favor(-1)
+		_change_favor(-2)
 		activity = "收起绳套"
 		last_action = "你听见脚边有细绳绷紧的声音，%s若无其事地移开了视线。" % _name()
 		return
+	# 成功只施加状态；互斥任务的完成窗口在到达终点/终局时，不在此刻结算。
 	_trap_used = true
 	player.add_status(TRAP_STATUS_ID, 2, current_round)
-	_change_favor(-5)
-	_complete_task()
 	activity = "退到一旁"
 	last_action = "%s在你前头布下的绳套骤然收紧，你被困住了。" % _name()
 
@@ -913,18 +1099,35 @@ func _add_item(item_id: String) -> bool:
 	if item_id.is_empty():
 		return false
 	while actor.inventory.size() >= MAX_ITEM_SLOTS:
-		var dropped := false
-		for i in range(actor.inventory.size()):
-			var inventory_id := actor.inventory[i]
-			var record := DataManager.get_record("items", inventory_id)
-			if not bool(record.get("quest_item", false)) and not HELPFUL_ITEMS.has(inventory_id):
-				actor.inventory.remove_at(i)
-				dropped = true
-				break
-		if not dropped:
+		var drop_index := _auto_drop_index()
+		if drop_index < 0:
 			return false
+		actor.inventory.remove_at(drop_index)
 	actor.add_item(item_id, 1)
 	return true
+
+
+## D-27/A3：满包时先丢非任务材料，再丢非任务消耗品，最后才考虑其他
+## 非任务物品；任务物品与 ai_task_protected 物品永不自动丢弃。
+func _auto_drop_index() -> int:
+	var fallback := -1
+	var tiers: Array[String] = ["material", "consumable"]
+	for target_type in tiers:
+		for i in range(actor.inventory.size()):
+			var inventory_id := String(actor.inventory[i])
+			var record := DataManager.get_record("items", inventory_id)
+			if bool(record.get("quest_item", false)) or bool(record.get("ai_task_protected", false)):
+				continue
+			if String(record.get("type", "")) == target_type:
+				return i
+	for i in range(actor.inventory.size()):
+		var inventory_id := String(actor.inventory[i])
+		var record := DataManager.get_record("items", inventory_id)
+		if bool(record.get("quest_item", false)) or bool(record.get("ai_task_protected", false)):
+			continue
+		fallback = i
+		break
+	return fallback
 
 
 ## EventManager 用：按 AI 任务偏好从 choose_from 中挑选物品。
@@ -1012,11 +1215,11 @@ func check_favor_milestone() -> Dictionary:
 	}
 
 
-func accept_player_goal(player: ActorState, player_trapped: bool) -> bool:
-	## 玩家抵达终点时结算 AI 侧的“观察型”任务。返回是否首次完成。
-	if not alive:
-		return false
-	var was_completed := _task_completed
+## 玩家抵达终点时结算 AI 侧的“观察型”任务。
+## 返回值同时报告互斥任务是否直接导致玩家失败，由 GameManager 决定胜负。
+func accept_player_goal(player: ActorState, player_trapped: bool) -> Dictionary:
+	if not alive or player == null or _task_completed:
+		return _task_result()
 	match _task_type():
 		"player_alive_at_goal":
 			if player.hp > 0:
@@ -1029,24 +1232,179 @@ func accept_player_goal(player: ActorState, player_trapped: bool) -> bool:
 				_complete_task()
 		"player_trapped_at_window":
 			if player_trapped:
-				_complete_task()
+				return _complete_exclusive_task(
+					"%s的绳套在你抵达终点时仍然锁着你的脚，你没能通过终点守卫。" % _name()
+				)
 		_:
-			return false
-	return _task_completed and not was_completed
+			return _task_result()
+	return _task_result(_just_completed)
+
+
+## 终局/超时结算：薇拉的陷阱任务只有在玩家仍被困且未通过终点时才算完成（D-32）。
+func accept_run_end(player: ActorState, reached_goal: bool) -> Dictionary:
+	if not alive or player == null or _task_completed:
+		return _task_result()
+	if _task_type() != "player_trapped_at_window" or not player.has_status(TRAP_STATUS_ID):
+		return _task_result()
+	var reason := ""
+	if reached_goal:
+		reason = "%s的绳套让你在抵达终点时仍无法行动。" % _name()
+	else:
+		reason = "%s的绳套把你困在终点之前，直到荒原的时限耗尽。" % _name()
+	return _complete_exclusive_task(reason)
+
+
+## 互斥任务达成：敌方 → 玩家立即失败；友方/中立 → 好感 −5 并转敌，不立即失败。
+func _complete_exclusive_task(defeat_reason: String) -> Dictionary:
+	var result := _task_result()
+	if _task_completed:
+		return result
+	var faction_before := faction
+	var favor_before := favor
+	result["faction_before"] = faction_before
+	result["favor_before"] = favor_before
+	result["completed"] = _complete_task()
+	result["summary"] = defeat_reason
+	if faction_before == "enemy":
+		_player_defeated = true
+		_defeat_reason = defeat_reason
+		result["player_defeated"] = true
+		result["defeat_reason"] = defeat_reason
+	else:
+		var change := _change_favor(-5)
+		result["favor_changed"] = bool(change.get("favor_changed", false))
+		result["faction_changed"] = bool(change.get("faction_changed", false))
+		result["faction"] = faction
+		result["favor"] = favor
+	return result
+
+
+func _task_result(completed: bool = false) -> Dictionary:
+	return {
+		"completed": completed,
+		"player_defeated": _player_defeated,
+		"defeat_reason": _defeat_reason,
+		"faction_changed": false,
+		"favor_changed": false,
+	}
 
 
 func _update_scout_task(map: MapData, player: ActorState) -> void:
-	if _task_type() == "reveal_goal_first" and player.cell_id == map.goal_id:
-		return
+	_ensure_map_tasks(map)
+	_check_map_task_completion(map, player)
 	if _task_type() == "reach_goal_first" and reached_goal:
+		_complete_task()
+	if _task_type() == "hold_tradable_quest_item_at_goal" and reached_goal and _has_tradable():
 		_complete_task()
 
 
-func _complete_task() -> void:
-	if _task_completed:
+## 林鸮的地图任务：目标格 = 起点→终点最短路中、终点前的最后 N 格（D-34）。
+func _ensure_map_tasks(map: MapData) -> void:
+	if _task_type() != "reveal_regions_before_goal" or not _target_path_cells.is_empty():
 		return
+	var path := map.shortest_cell_path(map.start_id, map.goal_id)
+	if path.size() <= 1:
+		return
+	var count := int(task.get("completion", {}).get("count", 3))
+	count = clampi(count, 1, path.size() - 1)
+	var start_index := path.size() - 1 - count
+	for i in range(start_index, path.size() - 1):
+		_target_path_cells.append(path[i])
+	_refresh_map_task_progress()
+
+
+func _refresh_map_task_progress() -> void:
+	var count := 0
+	for cell_id in _target_path_cells:
+		if _scouted_cells.has(cell_id):
+			count += 1
+	_map_task_revealed_count = count
+
+
+## 把以 center_id 为中心、radius_cells 格内的地块记为林鸮自己看见过。
+## 只写 AI 内部记录，不碰玩家迷雾；玩家是否共享由 friendly 分享逻辑决定。
+func _mark_revealed(map: MapData, center_id: int, radius_cells: int) -> void:
+	if map == null or map.get_cell(center_id) == null:
+		return
+	var center_pos := map.cell_center(center_id)
+	var radius_world := float(maxi(1, radius_cells)) * map.average_site_spacing
+	for cell in map.cells:
+		if cell.center.distance_to(center_pos) <= radius_world + 0.01:
+			_scouted_cells[cell.id] = true
+	_refresh_map_task_progress()
+
+
+func _check_map_task_completion(map: MapData, player: ActorState) -> bool:
+	var was_completed := _task_completed
+	if _task_type() == "reveal_regions_before_goal":
+		_refresh_map_task_progress()
+		if not _target_path_cells.is_empty() and _map_task_revealed_count >= _target_path_cells.size():
+			_complete_task()
+	elif _task_type() == "reveal_goal_first":
+		if player != null and player.cell_id == map.goal_id:
+			_task_failed = true
+		_check_goal_reveal(map, player)
+	return _task_completed and not was_completed
+
+
+func _check_goal_reveal(map: MapData, player: ActorState) -> void:
+	if _task_type() != "reveal_goal_first" or _task_completed or _task_failed:
+		return
+	if not _scouted_cells.has(map.goal_id):
+		return
+	if _goal_info_shared or _player_knows_goal(map, player):
+		_task_failed = true
+		return
+	_goal_revealed_by_ai = true
+	_complete_task()
+
+
+func _player_knows_goal(map: MapData, player: ActorState) -> bool:
+	if player != null and player.cell_id == map.goal_id:
+		return true
+	var goal_cell := map.get_cell(map.goal_id)
+	return goal_cell != null and goal_cell.seen
+
+
+func _nearest_unrevealed_target(map: MapData) -> int:
+	var best := -1
+	var best_distance := 999999
+	for cell_id in _target_path_cells:
+		if _scouted_cells.has(cell_id):
+			continue
+		var distance := map.graph_distance(actor.cell_id, cell_id)
+		if distance >= 0 and distance < best_distance:
+			best_distance = distance
+			best = cell_id
+	return best
+
+
+func _within_scout_reveal(map: MapData, cell_id: int) -> bool:
+	if map == null or map.get_cell(cell_id) == null:
+		return false
+	var radius_world := float(actor.scout_reveal_radius()) * map.average_site_spacing
+	return map.cell_center(actor.cell_id).distance_to(map.cell_center(cell_id)) <= radius_world + 0.01
+
+
+func _cell_in_radius(map: MapData, cell_id: int, center_id: int, radius_world: float) -> bool:
+	if map == null or map.get_cell(cell_id) == null or map.get_cell(center_id) == null:
+		return false
+	return map.cell_center(center_id).distance_to(map.cell_center(cell_id)) <= radius_world + 0.01
+
+
+func _scouted_cell_ids() -> Dictionary:
+	var cells := {}
+	for cell_id in _scouted_cells.keys():
+		cells[str(int(cell_id))] = true
+	return cells
+
+
+func _complete_task() -> bool:
+	if _task_completed:
+		return false
 	_task_completed = true
 	_just_completed = true
+	return true
 
 
 func _die(report: Dictionary, reason: String) -> void:
@@ -1135,8 +1493,15 @@ func task_progress_text() -> String:
 		return "已经了结了自己的心事"
 	match task_type:
 		"reveal_regions_before_goal":
-			return "正在记录终点前的区域（%d/%d）" % [_scout_count, int(completion.get("count", 3))]
+			var target_count := _target_path_cells.size()
+			if target_count <= 0:
+				target_count = int(completion.get("count", 3))
+			return "正在记录终点前的区域（%d/%d）" % [_map_task_revealed_count, target_count]
 		"reveal_goal_first":
+			if _task_failed:
+				return "已经错过了抢先看清终点的时机"
+			if _goal_revealed_by_ai:
+				return "已经独自看清了终点"
 			return "似乎想抢先看清终点"
 		"reach_goal_first":
 			return "正赶向终点"

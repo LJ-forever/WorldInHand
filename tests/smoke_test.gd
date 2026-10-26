@@ -24,6 +24,8 @@ func _ready() -> void:
 	_test_companion_and_events()
 	_test_formula_sources()
 	_test_combat_and_victory_tiers()
+	_test_p0_exclusive_tasks()
+	_test_inventory_overflow_and_recovery()
 	_test_save_load()
 	_test_victory()
 	print("=== %s ===" % ("PASS" if failures.is_empty() else "FAIL (%d)" % failures.size()))
@@ -1198,6 +1200,58 @@ func _test_game_scene() -> void:
 			GameManager.player.inventory = held_inventory
 			backpack_overlay.close()
 			await get_tree().process_frame
+			# A3 UI：满格奖励会让 HUD 在安全边界自动打开背包取舍页。
+			var ui_held_inventory := GameManager.player.inventory.duplicate()
+			var ui_held_equipment := GameManager.player.equipment.duplicate()
+			var ui_held_companion := GameManager.companion
+			var ui_held_perception := int(GameManager.player.attributes.get("perception", 0))
+			GameManager.player.inventory.clear()
+			for ui_item in ["supply", "potion", "herb", "mount", "pelt", "ancient_coin", "rare_charm", "telescope"]:
+				GameManager.player.add_item(ui_item, 1)
+			_check(GameManager.player.inventory_slot_count() == 8, "UI overflow test fills 8 backpack slots")
+			_check(not backpack_overlay.visible and not get_tree().paused, "backpack starts closed before the queued reward")
+			GameManager.grant_item("bandit_blade", 1, "UI 测试")
+			await get_tree().process_frame
+			await get_tree().process_frame
+			_check(backpack_overlay.visible and get_tree().paused, "HUD auto-opens the backpack for a queued reward")
+			var ui_bag_title: Label = backpack_overlay.get_node_or_null("Center/Panel/Margin/VBox/Body/Right/BagTitle")
+			var ui_use_actions: HBoxContainer = backpack_overlay.get_node_or_null("Center/Panel/Margin/VBox/DetailPanel/DetailMargin/DetailVBox/UseActions")
+			var ui_recovery_row: HBoxContainer = backpack_overlay.get_node_or_null("Center/Panel/Margin/VBox/Body/Right/RecoveryRow")
+			_check(ui_bag_title != null and "需取舍" in ui_bag_title.text, "overflow backpack page explains that a choice is required")
+			_check(ui_use_actions != null and ui_use_actions.get_child_count() >= 2, "overflow page offers discard guidance and an abandon button")
+			_check(ui_recovery_row != null and not ui_recovery_row.visible, "recovery row stays hidden when no item was stolen")
+			backpack_overlay._on_inventory_pressed("pelt")
+			await get_tree().process_frame
+			_check(not GameManager.has_pending_item_overflow(), "discarding from the UI resolves the overflow")
+			_check(GameManager.player.has_item("bandit_blade") and not GameManager.player.has_item("pelt"), "UI discard swaps in the queued reward")
+			_check(not backpack_overlay.visible and not get_tree().paused, "backpack closes and unpauses after the overflow is resolved")
+			# D-25 UI：失物存在时背包页出现追查入口，检定后按钮切换为“本回合已追查”。
+			var ui_thief := CompanionAI.new()
+			_check(ui_thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", int(GameManager.map.neighbors_of(GameManager.player.cell_id)[0]), RNGManager.get_stream("ai")), "UI recovery thief setup succeeds")
+			GameManager.companion = ui_thief
+			ui_thief.actor.inventory.clear()
+			ui_thief.actor.add_item("rare_charm", 1)
+			ui_thief._stolen_item_id = "rare_charm"
+			GameManager.player.attributes["perception"] = -100
+			backpack_overlay.open()
+			await get_tree().process_frame
+			var ui_recovery_button: Button = ui_recovery_row.get_node_or_null("RecoveryButton") if ui_recovery_row != null else null
+			var ui_recovery_label: Label = ui_recovery_row.get_node_or_null("RecoveryLabel") if ui_recovery_row != null else null
+			_check(ui_recovery_row != null and ui_recovery_row.visible, "stolen item exposes the recovery row in the backpack")
+			_check(ui_recovery_label != null and "失物" in ui_recovery_label.text, "recovery row names the stolen item")
+			_check(ui_recovery_button != null and not ui_recovery_button.disabled and "免费" in ui_recovery_button.text, "recovery button is available and free")
+			if ui_recovery_button != null:
+				ui_recovery_button.pressed.emit()
+				await get_tree().process_frame
+				var ui_detail: Label = backpack_overlay.get_node_or_null("Center/Panel/Margin/VBox/DetailPanel/DetailMargin/DetailVBox/DetailLabel")
+				_check(ui_detail != null and "没能找回" in ui_detail.text, "failed recovery is explained in the backpack detail pane")
+				_check(ui_recovery_button.disabled and ui_recovery_button.text.contains("本回合"), "recovery button locks after the free attempt")
+			backpack_overlay.close()
+			await get_tree().process_frame
+			GameManager.companion = ui_held_companion
+			GameManager.player.attributes["perception"] = ui_held_perception
+			GameManager.player.equipment = ui_held_equipment
+			GameManager.player.inventory = ui_held_inventory
 		var hover_label: Label = hud.get_node_or_null("HoverChip/Margin/HoverLabel")
 		_check(hover_label != null, "HUD shows terrain state while hovering")
 		if hover_label != null and map_view != null and GameManager.player != null:
@@ -1892,13 +1946,13 @@ func _test_companion_and_events() -> void:
 		_check(not String(support_report.get("speech", "")).strip_edges().is_empty(), "companion turn produces a spoken line")
 		_check(not (support_report.get("messages", []) as Array).is_empty(), "proactive companion action is visible in the chronicle")
 
-		# 友好地图任务也不能从开局位置一直站着：先回到 3 格内，再开始侦察。
+		# 友好地图任务直接朝终点前的最短路区段侦察，而不是站在玩家身边空转。
 		var map_mate := CompanionAI.new()
 		_check(map_mate.setup(DataManager.get_record("characters", "lin_xiao"), "lin_map_before_goal", support_cell, RNGManager.get_stream("ai")), "friendly map-task companion setup succeeds")
 		map_mate.actor.hp = map_mate.actor.hp_max
-		_check(map_mate._choose_intent(map, player) == "support", "friendly map-task companion first returns to hearing range")
+		_check(map_mate._choose_intent(map, player) == "scout", "friendly map-task companion scouts the goal-front route")
 		map_mate.actor.cell_id = beside
-		_check(map_mate._choose_intent(map, player) == "scout", "friendly map-task companion scouts once close to the player")
+		_check(map_mate._choose_intent(map, player) == "scout", "friendly map-task companion keeps scouting until the route is mapped")
 
 	# 敌方任务：相邻时偷窃，物品与任务进度都转给 AI。
 	var enemy := CompanionAI.new()
@@ -1911,6 +1965,25 @@ func _test_companion_and_events() -> void:
 	_check(not player.has_item("rare_charm"), "enemy companion steals an adjacent player's item")
 	_check(enemy.actor.has_item("rare_charm"), "stolen item moves into the companion inventory")
 	_check(bool(theft_report.get("task_completed", false)), "successful theft completes her personal task")
+	# D-25：每回合一次免费感知检定 DC 12；成功归还物品、好感 -3，任务完成不回溯。
+	var theft_round := GameManager.round_index
+	player.attributes["perception"] = -100
+	var failed_recovery := enemy.attempt_recover_stolen_item(player, theft_round)
+	_check(not bool(failed_recovery.get("success", true)), "a low-perception recovery check fails")
+	_check(enemy.has_stolen_item(), "a failed recovery leaves the item with the thief")
+	var repeat_recovery := enemy.attempt_recover_stolen_item(player, theft_round)
+	_check(not bool(repeat_recovery.get("ok", true)) and String(repeat_recovery.get("message", "")).contains("本回合"), "only one recovery check is allowed per round")
+	# 偷窃本身已把好感压到下限 -5；抬回中间值，单独验证追回的 -3 修正。
+	enemy.favor = 0
+	GameManager.round_index = theft_round + 1
+	player.attributes["perception"] = 20
+	var recovery_report := enemy.attempt_recover_stolen_item(player, GameManager.round_index)
+	_check(bool(recovery_report.get("success", false)), "a high-perception player recovers the stolen item next round")
+	_check(not enemy.actor.has_item("rare_charm"), "recovered item leaves the thief's inventory")
+	_check(enemy.favor == -3, "recovering the item costs 3 companion favor")
+	_check(enemy._task_completed, "recovery does not undo the completed theft task")
+	_check(not enemy.has_stolen_item(), "theft tracking clears after a successful recovery")
+	GameManager.round_index = theft_round
 	player.attributes["perception"] = 4
 
 	# 关系：ai_favor 立即改变好感；情报不足时只给模糊描述。
@@ -2282,6 +2355,323 @@ func _test_combat_and_victory_tiers() -> void:
 	_check(GameManager.player_victory_tier == "basic", "enemy same-round arrival invalidates perfect victory")
 
 
+func _test_p0_exclusive_tasks() -> void:
+	print("-- P0 exclusive tasks / hidden-task fidelity --")
+	var configs := MapConfigLoader.list_configs()
+	if configs.is_empty():
+		_check(false, "exclusive-task test config exists")
+		return
+	_check(_start_game("lin_xiao", configs[0]), "exclusive-task test run starts")
+	EventManager.random_events_enabled = false
+	var map := GameManager.map
+	var player := GameManager.player
+	var beside := int(map.neighbors_of(player.cell_id)[0])
+
+	# 影：武器/饰品优先，成功即完成；敌方时立即判负。
+	var thief := CompanionAI.new()
+	_check(thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "thief setup succeeds")
+	thief.faction = "enemy"
+	thief.favor = -5
+	player.equipment.clear()
+	player.inventory.clear()
+	player.equipment.append("bandit_blade")
+	player.add_item("potion", 1)
+	player.add_item("pelt", 1)
+	player.attributes["perception"] = -100
+	var theft_report := thief.take_turn(map, player, 1, true)
+	_check(not player.has_item("bandit_blade") and thief.actor.has_item("bandit_blade"), "thief prioritizes non-consumable equipment")
+	_check(player.has_item("potion") and player.has_item("pelt"), "thief leaves consumables and materials when equipment is available")
+	_check(bool(theft_report.get("task_completed", false)), "successful equipment theft completes the hidden task")
+	_check(bool(theft_report.get("player_defeated", false)), "enemy thief defeating the player is reported immediately")
+	_check(String(theft_report.get("defeat_reason", "")).contains("偷走"), "theft defeat explains what was taken")
+
+	# 影：失败好感 −2；中立/友方成功只转敌，不立即判负。
+	var thief_fail := CompanionAI.new()
+	_check(thief_fail.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "failing thief setup succeeds")
+	thief_fail.faction = "enemy"
+	thief_fail.favor = -2
+	player.attributes["perception"] = 100
+	player.equipment.clear()
+	player.inventory.clear()
+	player.equipment.append("bandit_blade")
+	thief_fail._try_steal(player)
+	_check(thief_fail.favor == -4, "failed theft lowers favor by 2")
+	_check(not thief_fail._task_completed and player.has_item("bandit_blade"), "failed theft keeps the task and the item")
+
+	var thief_neutral := CompanionAI.new()
+	_check(thief_neutral.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "neutral thief setup succeeds")
+	thief_neutral.faction = "neutral"
+	thief_neutral.favor = 0
+	player.attributes["perception"] = -100
+	thief_neutral._try_steal(player)
+	_check(thief_neutral._task_completed, "neutral thief still completes her objective on success")
+	_check(thief_neutral.faction == "enemy" and thief_neutral.favor == -5, "neutral thief turns enemy at favor −5")
+	_check(not thief_neutral._player_defeated, "non-enemy thief does not immediately defeat the player")
+
+	var thief_empty := CompanionAI.new()
+	_check(thief_empty.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "empty-pocket thief setup succeeds")
+	thief_empty.faction = "enemy"
+	thief_empty.favor = -5
+	player.equipment.clear()
+	player.inventory.clear()
+	player.add_item("pelt", 1)
+	var gold_before := player.gold
+	thief_empty._try_steal(player)
+	_check(not thief_empty._task_completed, "materials-only victims leave the theft task incomplete")
+	_check(player.gold == gold_before and player.has_item("pelt"), "thief never takes gold or materials")
+
+	# 薇拉：失败好感 −2；成功只施加 trapped，完成窗口延后。
+	var wei := CompanionAI.new()
+	_check(wei.setup(DataManager.get_record("characters", "wei_la"), "wei_trap_player", beside, RNGManager.get_stream("ai")), "trap companion setup succeeds")
+	wei.faction = "enemy"
+	wei.favor = -5
+	player.statuses.clear()
+	player.attributes["perception"] = -100
+	wei.actor.ap_deci = 100
+	wei._try_trap(player, 1)
+	_check(player.has_status("trapped"), "successful trap applies trapped")
+	_check(not wei._task_completed, "trap success does not complete the task at application")
+	_check(not wei._player_defeated, "trap success alone does not immediately defeat the player")
+	var trap_window := wei.accept_run_end(player, false)
+	_check(bool(trap_window.get("completed", false)), "trap task completes when the run ends while the player is trapped")
+	_check(bool(trap_window.get("player_defeated", false)), "enemy trap completion reports player defeat at the window")
+
+	var wei_fail := CompanionAI.new()
+	_check(wei_fail.setup(DataManager.get_record("characters", "wei_la"), "wei_trap_player", beside, RNGManager.get_stream("ai")), "failing trap companion setup succeeds")
+	wei_fail.faction = "enemy"
+	wei_fail.favor = -2
+	player.statuses.clear()
+	player.attributes["perception"] = 100
+	wei_fail.actor.ap_deci = 100
+	wei_fail._try_trap(player, 1)
+	_check(not player.has_status("trapped"), "failed trap does not apply trapped")
+	_check(wei_fail.favor == -4, "failed trap lowers favor by 2")
+	_check(not wei_fail._task_completed, "failed trap leaves the task open")
+
+	var wei_friendly := CompanionAI.new()
+	_check(wei_friendly.setup(DataManager.get_record("characters", "wei_la"), "wei_trap_player", beside, RNGManager.get_stream("ai")), "friendly trap companion setup succeeds")
+	wei_friendly.faction = "friendly"
+	wei_friendly.favor = 3
+	player.statuses.clear()
+	player.attributes["perception"] = -100
+	wei_friendly.actor.ap_deci = 100
+	wei_friendly._try_trap(player, 1)
+	_check(wei_friendly.favor == 3 and wei_friendly.faction == "friendly", "trap application does not change faction before the window")
+	var friendly_window := wei_friendly.accept_run_end(player, false)
+	_check(bool(friendly_window.get("completed", false)), "friendly trap still completes at the window")
+	_check(wei_friendly.faction == "enemy" and wei_friendly.favor == -2, "friendly trap completion applies favor −5 and turns enemy")
+	_check(not bool(friendly_window.get("player_defeated", false)), "friendly/neutral trap completion does not immediately defeat the player")
+	player.statuses.clear()
+	player.attributes["perception"] = 4
+
+	# 青蘅：玩家背包满时保留草药、不完成、不扣分享次数。
+	var qing := CompanionAI.new()
+	_check(qing.setup(DataManager.get_record("characters", "qing_heng"), "qing_share_herb", beside, RNGManager.get_stream("ai")), "herb companion setup succeeds")
+	qing.actor.add_item("herb", 1)
+	player.equipment.clear()
+	player.inventory.clear()
+	for item_id in ["supply", "potion", "mount", "bandit_blade", "pelt", "ancient_coin", "rare_charm", "telescope"]:
+		player.add_item(item_id, 1)
+	_check(player.inventory_slot_count() == ActorState.INVENTORY_SLOT_LIMIT, "player backpack reaches 8 slots")
+	_check(qing._interact_support(player, 1), "full-backpack share is still a handled interaction")
+	_check(qing.actor.has_item("herb") and not qing._task_completed, "full backpack keeps the herb and leaves the task incomplete")
+	_check(player.item_count("herb") == 0, "full backpack receives no herb")
+	player.remove_item("telescope", 1)
+	_check(qing._interact_support(player, 1), "share succeeds once a slot opens")
+	_check(not qing.actor.has_item("herb") and qing._task_completed, "successful share transfers the herb and completes the task")
+	_check(player.item_count("herb") == 1, "player receives the shared herb")
+
+	# 林鸮：终点前 3 格 = 起点→终点最短路的最后 3 格（不含终点）。
+	var lin := CompanionAI.new()
+	_check(lin.setup(DataManager.get_record("characters", "lin_xiao"), "lin_map_before_goal", beside, RNGManager.get_stream("ai")), "map companion setup succeeds")
+	lin._ensure_map_tasks(map)
+	var goal_path := map.shortest_cell_path(map.start_id, map.goal_id)
+	_check(goal_path.size() >= 4, "goal path has enough cells for the last-three rule")
+	var expected_targets: Array[int] = []
+	for i in range(goal_path.size() - 4, goal_path.size() - 1):
+		expected_targets.append(goal_path[i])
+	_check(lin._target_path_cells == expected_targets, "map task targets the last three cells before the goal")
+	_check(not lin._target_path_cells.has(map.goal_id), "map task excludes the goal cell itself")
+	lin._scouted_cells.clear()
+	lin._scouted_cells[expected_targets[0]] = true
+	lin._scouted_cells[expected_targets[1]] = true
+	lin._refresh_map_task_progress()
+	_check(not lin._check_map_task_completion(map, player), "two revealed target cells do not complete the map task")
+	lin._scouted_cells[expected_targets[2]] = true
+	lin._refresh_map_task_progress()
+	_check(lin._check_map_task_completion(map, player), "all three target cells complete the map task")
+
+	var goal_lin := CompanionAI.new()
+	_check(goal_lin.setup(DataManager.get_record("characters", "lin_xiao"), "lin_reveal_goal_first", beside, RNGManager.get_stream("ai")), "goal-reveal companion setup succeeds")
+	map.get_cell(map.goal_id).seen = false
+	player.cell_id = beside
+	goal_lin._scouted_cells[map.goal_id] = true
+	goal_lin._update_scout_task(map, player)
+	_check(goal_lin._goal_revealed_by_ai and goal_lin._task_completed, "revealing the goal before the player completes the information task")
+
+	var late_lin := CompanionAI.new()
+	_check(late_lin.setup(DataManager.get_record("characters", "lin_xiao"), "lin_reveal_goal_first", beside, RNGManager.get_stream("ai")), "late goal-reveal companion setup succeeds")
+	map.get_cell(map.goal_id).seen = true
+	late_lin._scouted_cells[map.goal_id] = true
+	late_lin._update_scout_task(map, player)
+	_check(late_lin._task_failed and not late_lin._task_completed, "goal already known to the player fails the reveal-first task")
+
+	# 沙铠：只认非初始可交易物；任务物品不会被自动丢弃。
+	var sha := CompanionAI.new()
+	_check(sha.setup(DataManager.get_record("characters", "sha_kai"), "sha_carry_tradable", beside, RNGManager.get_stream("ai")), "carry companion setup succeeds")
+	sha.actor.equipment.clear()
+	sha.actor.inventory.clear()
+	sha.actor.equipment.append("bandit_blade")
+	_check(not sha._has_tradable(), "initial blade does not count as a tradable quest item")
+	sha.actor.add_item("pelt", 1)
+	_check(sha._has_tradable(), "pelt satisfies the carry task")
+	sha.actor.inventory.clear()
+	sha.actor.inventory.append("pelt")
+	sha.actor.inventory.append("ancient_coin")
+	sha.actor.inventory.append("herb")
+	_check(not sha._add_item("rare_charm"), "full AI bag cannot accept an extra protected item")
+	_check(sha.actor.has_item("pelt") and sha.actor.has_item("ancient_coin"), "protected task items are never auto-dropped")
+	sha.actor.inventory[2] = "telescope"
+	_check(sha._add_item("rare_charm"), "a non-task item is dropped to make room")
+	_check(sha.actor.has_item("pelt") and sha.actor.has_item("ancient_coin") and sha.actor.has_item("rare_charm"), "task items survive the bag cleanup")
+	sha.actor.cell_id = map.goal_id
+	sha.actor.attributes["combat"] = 100
+	sha._goal_cooldown = 0
+	sha._attempt_goal(map, player, 1)
+	_check(sha.reached_goal and sha._task_completed, "carrying a tradable to the goal completes the task")
+
+	var carry_intent := CompanionAI.new()
+	_check(carry_intent.setup(DataManager.get_record("characters", "sha_kai"), "sha_carry_tradable", beside, RNGManager.get_stream("ai")), "carry-intent companion setup succeeds")
+	carry_intent.faction = "friendly"
+	carry_intent.actor.hp = carry_intent.actor.hp_max
+	_check(carry_intent._choose_intent(map, player) == "explore", "carry companion searches before heading to the goal empty-handed")
+	carry_intent.actor.add_item("herb", 1)
+	_check(carry_intent._choose_intent(map, player) == "goal", "carry companion heads to the goal once a tradable is held")
+
+	# GameManager 接线：敌方偷窃成功立即结束本局；薇拉在终点窗口可把胜利改判为失败。
+	_check(_start_game("lin_xiao", configs[0]), "theft-defeat run starts")
+	EventManager.random_events_enabled = false
+	map = GameManager.map
+	player = GameManager.player
+	player.equipment.clear()
+	player.inventory.clear()
+	player.equipment.append("bandit_blade")
+	player.attributes["perception"] = -100
+	var run_thief := CompanionAI.new()
+	var thief_cell := int(map.neighbors_of(player.cell_id)[0])
+	_check(run_thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", thief_cell, RNGManager.get_stream("ai")), "run thief setup succeeds")
+	run_thief.faction = "enemy"
+	run_thief.favor = -5
+	GameManager.companion = run_thief
+	var defeat_result := {"win": true, "reason": ""}
+	var on_defeat := func(win: bool, reason: String) -> void:
+		defeat_result["win"] = win
+		defeat_result["reason"] = reason
+	GameManager.game_over.connect(on_defeat, CONNECT_ONE_SHOT)
+	GameManager._run_companion_turn()
+	_check(not bool(defeat_result["win"]), "enemy theft immediately ends the run in defeat")
+	_check(GameManager.state == GameManager.State.GAME_OVER, "theft defeat enters GAME_OVER")
+	_check(String(defeat_result["reason"]).contains("偷走"), "theft defeat reason names the stolen item")
+	_check(not SaveManager.has_save(SaveManager.DEFAULT_SLOT), "defeat clears the autosave slot")
+
+	_check(_start_game("lin_xiao", configs[0]), "trap-window victory run starts")
+	EventManager.random_events_enabled = false
+	map = GameManager.map
+	player = GameManager.player
+	var last_wei := CompanionAI.new()
+	_check(last_wei.setup(DataManager.get_record("characters", "wei_la"), "wei_trap_player", int(map.neighbors_of(player.cell_id)[0]), RNGManager.get_stream("ai")), "final trap companion setup succeeds")
+	last_wei.faction = "enemy"
+	last_wei.favor = -5
+	GameManager.companion = last_wei
+	player.cell_id = map.goal_id
+	player.add_status("trapped", 2, GameManager.round_index)
+	var trap_result := {"win": true, "reason": ""}
+	var on_trap_result := func(win: bool, reason: String) -> void:
+		trap_result["win"] = win
+		trap_result["reason"] = reason
+	GameManager.game_over.connect(on_trap_result, CONNECT_ONE_SHOT)
+	GameManager.finish_victory("你抵达终点。")
+	_check(not bool(trap_result["win"]), "enemy trap at the goal window overrides the victory")
+	_check(String(trap_result["reason"]).contains("绳套"), "trap-window defeat explains the trap")
+
+
+func _test_inventory_overflow_and_recovery() -> void:
+	print("-- A3 inventory overflow / D-25 recovery integration --")
+	var configs := MapConfigLoader.list_configs()
+	if configs.is_empty():
+		_check(false, "overflow test config exists")
+		return
+	_check(_start_game("lin_xiao", configs[0]), "overflow test run starts")
+	EventManager.random_events_enabled = false
+	var map := GameManager.map
+	var player := GameManager.player
+	var companion := GameManager.companion
+	player.equipment.clear()
+	player.inventory.clear()
+	GameManager.pending_item_overflows.clear()
+
+	# A3：8 格满后，第九件不同物品先排队；同种物品仍可叠加。
+	for item_id in ["supply", "potion", "herb", "mount", "pelt", "ancient_coin", "rare_charm", "telescope"]:
+		player.add_item(item_id, 1)
+	_check(player.inventory_slot_count() == ActorState.INVENTORY_SLOT_LIMIT, "A3 test fills all 8 backpack slots")
+	var stacked := GameManager.grant_item("potion", 2, "测试")
+	_check(bool(stacked.get("ok", false)) and not bool(stacked.get("queued", true)), "a stacked consumable is accepted at 8 slots")
+	_check(player.item_count("potion") == 3 and player.inventory_slot_count() == 8, "stacking does not consume another slot")
+	var queued := GameManager.grant_item("bandit_blade", 1, "POI")
+	_check(bool(queued.get("ok", false)) and bool(queued.get("queued", false)), "a ninth item type is queued when the backpack is full")
+	_check(not player.has_item("bandit_blade") and GameManager.has_pending_item_overflow(), "queued reward is not added before the player decides")
+	var pending := GameManager.current_item_overflow()
+	_check(String(pending.get("item_id", "")) == "bandit_blade" and String(pending.get("source", "")) == "POI", "pending overflow records the item and source")
+	var bad_discard := GameManager.resolve_item_overflow("relic")
+	_check(not bool(bad_discard.get("ok", true)) and GameManager.has_pending_item_overflow(), "discarding an item not in the backpack is rejected")
+	var accepted := GameManager.resolve_item_overflow("pelt")
+	_check(bool(accepted.get("ok", false)), "discarding a backpack item resolves the overflow")
+	_check(player.has_item("bandit_blade") and not player.has_item("pelt"), "the discarded item is replaced by the queued reward")
+	_check(not GameManager.has_pending_item_overflow(), "resolved overflow leaves the queue empty")
+	var queued_again := GameManager.grant_item("relic", 1, "事件")
+	_check(bool(queued_again.get("queued", false)), "a later reward can queue again after the backpack refills")
+	var abandoned := GameManager.resolve_item_overflow("")
+	_check(bool(abandoned.get("ok", false)), "refusing the queued item resolves the overflow")
+	_check(not player.has_item("relic"), "refusing the overflow permanently loses the reward")
+	_check(not GameManager.has_pending_item_overflow(), "abandoning leaves no pending overflow")
+	_check(not bool(GameManager.resolve_item_overflow("").get("ok", true)), "resolving with an empty queue is rejected")
+
+	# D-25：中立的影偷走装备后不立即判负；每回合一次免费感知检定，成功归还且好感 −3。
+	player.inventory.clear()
+	player.equipment.clear()
+	player.equipment.append("bandit_blade")
+	player.attributes["perception"] = -100
+	var thief := CompanionAI.new()
+	_check(thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", int(map.neighbors_of(player.cell_id)[0]), RNGManager.get_stream("ai")), "integration thief setup succeeds")
+	thief.faction = "neutral"
+	thief.favor = 0
+	GameManager.companion = thief
+	thief._try_steal(player)
+	_check(thief.has_stolen_item() and not player.has_item("bandit_blade"), "neutral theft transfers the equipment to the thief")
+	_check(String(GameManager.stolen_item_recovery_info().get("item_id", "")) == "bandit_blade", "GameManager exposes the stolen item recovery entry")
+	var ap_before := player.ap_deci
+	var failed := GameManager.recover_stolen_item()
+	_check(bool(failed.get("ok", false)) and not bool(failed.get("success", true)), "a failed recovery check is reported as a check result")
+	_check(player.ap_deci == ap_before, "the free recovery check costs no AP")
+	_check(thief.has_stolen_item(), "a failed recovery leaves the item with the thief")
+	var second_same_round := GameManager.recover_stolen_item()
+	_check(not bool(second_same_round.get("ok", true)) and String(second_same_round.get("message", "")).contains("本回合"), "GameManager enforces one recovery check per round")
+	GameManager.round_index += 1
+	player.attributes["perception"] = 20
+	# 偷窃已把好感压到 -5；抬回 -1，验证 D-25 的 -3 修正没有被下限掩盖。
+	thief.favor = -1
+	var favor_before_recovery := thief.favor
+	var recovered := GameManager.recover_stolen_item()
+	_check(bool(recovered.get("success", false)), "a high-perception recovery succeeds on the next round")
+	_check(player.has_item("bandit_blade") and not thief.has_stolen_item(), "the recovered item returns to the player")
+	_check(thief.favor == favor_before_recovery - 3, "GameManager applies the D-25 favor penalty")
+	_check(thief._task_completed, "recovery leaves the thief's completed task untouched")
+	_check(not bool(GameManager.stolen_item_recovery_info().get("available", true)), "the recovery entry disappears once the item is returned")
+	_check(GameManager.last_move_message.contains("夺回"), "successful recovery is reported in the move log")
+	_check(player.ap_deci == ap_before, "successful recovery also costs no AP")
+	player.attributes["perception"] = 4
+
+
 func _test_save_load() -> void:
 	print("-- save / load --")
 	var configs := MapConfigLoader.list_configs()
@@ -2342,8 +2732,18 @@ func _test_save_load() -> void:
 	companion._scout_count = 2
 	companion._support_cooldown = 1
 	companion._task_completed = true
+	companion._scouted_cells[map.start_id] = true
+	companion._map_task_revealed_count = 2
+	companion._goal_revealed_by_ai = true
+	companion._goal_info_shared = true
+	companion._task_failed = true
 	companion.favor_milestones["trust_supply"] = true
 	companion.visited_pois[map.start_id] = true
+	companion.actor.add_item("rare_charm", 1)
+	companion._stolen_item_id = "rare_charm"
+	companion._recovery_attempt_round = 7
+	GameManager.pending_item_overflows.clear()
+	GameManager.pending_item_overflows.append({"item_id": "herb", "count": 1, "source": "存档测试"})
 	var probe_index := (neighbor_id + 7) % map.cells.size()
 	if probe_index == neighbor_id:
 		probe_index = (probe_index + 1) % map.cells.size()
@@ -2425,8 +2825,16 @@ func _test_save_load() -> void:
 		_check(loaded_companion._scout_count == 2, "companion private counters restored")
 		_check(loaded_companion._support_cooldown == 1, "companion cooldown restored")
 		_check(loaded_companion._task_completed, "companion task completion restored")
+		_check(loaded_companion._scouted_cells.has(map.start_id), "companion scouted cells restored")
+		_check(loaded_companion._map_task_revealed_count == 2, "companion map-task progress restored")
+		_check(loaded_companion._goal_revealed_by_ai and loaded_companion._goal_info_shared and loaded_companion._task_failed, "companion information-task flags restored")
 		_check(bool(loaded_companion.favor_milestones.get("trust_supply", false)), "companion favor milestones restored")
 		_check(loaded_companion.visited_pois.has(map.start_id), "companion visited POIs restored")
+		_check(loaded_companion.has_stolen_item() and loaded_companion.stolen_item_id() == "rare_charm", "stolen item tracking restored")
+		_check(loaded_companion._recovery_attempt_round == 7, "recovery attempt round restored")
+	_check(GameManager.has_pending_item_overflow(), "pending backpack overflow restored")
+	var loaded_overflow := GameManager.current_item_overflow()
+	_check(String(loaded_overflow.get("item_id", "")) == "herb" and String(loaded_overflow.get("source", "")) == "存档测试", "pending overflow item and source restored")
 	_check(int(EventManager._cooldowns.get("caravan", 0)) == 3, "event cooldowns restored")
 	_check(int(EventManager._wander_ap_accum) == 17, "wander AP accumulator restored")
 	_check(int(EventManager._random_events_this_run) == 17, "per-run random event count restored")

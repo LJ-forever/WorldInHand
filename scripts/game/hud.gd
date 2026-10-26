@@ -82,8 +82,11 @@ func _ready() -> void:
 	GameManager.world_log_changed.connect(_update_chronicle)
 	GameManager.world_notice.connect(_on_world_notice)
 	GameManager.inventory_changed.connect(refresh)
+	GameManager.inventory_overflow_changed.connect(_on_inventory_overflow_changed)
+	GameManager.combat_finished.connect(_on_combat_finished_for_overflow)
 	GameManager.intro_dismissed.connect(_on_intro_dismissed)
 	GameManager.scout_finished.connect(_on_scout_finished)
+	EventManager.event_finished.connect(_on_event_finished_for_overflow)
 
 	_map_view = get_parent().get_node_or_null("MapView")
 	if _map_view != null:
@@ -169,6 +172,7 @@ func refresh() -> void:
 	_update_toast_from_game()
 	if backpack_overlay.visible:
 		backpack_overlay.refresh()
+	_maybe_open_item_overflow()
 
 
 func _on_ap_changed(_ap_deci: int) -> void:
@@ -212,6 +216,7 @@ func _toggle_pause() -> void:
 func _resume_game() -> void:
 	pause_overlay.visible = false
 	get_tree().paused = false
+	refresh()
 
 
 func _on_help_pressed() -> void:
@@ -242,6 +247,42 @@ func _on_modal_closed() -> void:
 		get_tree().paused = false
 		_modal_paused = false
 	refresh()
+
+
+func _on_inventory_overflow_changed() -> void:
+	call_deferred("_maybe_open_item_overflow")
+
+
+func _on_event_finished_for_overflow(_event_id: String) -> void:
+	call_deferred("_maybe_open_item_overflow")
+
+
+func _on_combat_finished_for_overflow(_payload: Dictionary) -> void:
+	call_deferred("_maybe_open_item_overflow")
+
+
+## A3：背包溢出只在没有事件/战斗/移动遮挡时弹出，避免两个面板抢输入。
+func _maybe_open_item_overflow() -> void:
+	if not GameManager.has_pending_item_overflow():
+		return
+	if GameManager.intro_open or result_overlay.visible:
+		return
+	if pause_overlay.visible:
+		return
+	if GameManager.state != GameManager.State.PLAYING:
+		return
+	if GameManager.is_moving or GameManager.movement_paused:
+		return
+	var event_overlay: Control = get_node_or_null("EventOverlay")
+	if event_overlay != null and event_overlay.visible:
+		return
+	var combat_overlay: Control = get_node_or_null("CombatOverlay")
+	if combat_overlay != null and combat_overlay.visible:
+		return
+	if backpack_overlay.visible:
+		return
+	backpack_overlay.open()
+	_pause_for_modal()
 
 
 func _on_intro_dismissed() -> void:
@@ -330,6 +371,9 @@ func _update_companion_strip(companion_name: String) -> void:
 		companion_activity.add_theme_color_override("font_color", Color(0.95, 0.66, 0.48))
 	else:
 		companion_activity.add_theme_color_override("font_color", Color(0.65, 0.69, 0.61))
+	var recovery_info := GameManager.stolen_item_recovery_info()
+	if bool(recovery_info.get("available", false)):
+		companion_activity.text += " · 失物可追查"
 	companion_activity.tooltip_text = "同伴独立侦察、探索、搜集物资、支援或敌对行动，不会一直跟在你身后。\n%s\n%s" % [
 		GameManager.companion_intel_text(), ATTACK_HELP,
 	]

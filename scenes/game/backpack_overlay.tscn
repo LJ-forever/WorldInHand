@@ -103,6 +103,25 @@ theme_override_colors/font_color = Color(0.784314, 0.803922, 0.74902, 1)
 theme_override_font_sizes/font_size = 16
 text = "背包"
 
+[node name="RecoveryRow" type="HBoxContainer" parent="Center/Panel/Margin/VBox/Body/Right"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RecoveryLabel" type="Label" parent="Center/Panel/Margin/VBox/Body/Right/RecoveryRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.929412, 0.74902, 0.509804, 1)
+theme_override_font_sizes/font_size = 12
+text = "失物：每回合可免费进行一次感知检定（DC 12）。"
+autowrap_mode = 3
+
+[node name="RecoveryButton" type="Button" parent="Center/Panel/Margin/VBox/Body/Right/RecoveryRow"]
+custom_minimum_size = Vector2(150, 34)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+text = "追查失物（免费）"
+
 [node name="Scroll" type="ScrollContainer" parent="Center/Panel/Margin/VBox/Body/Right"]
 layout_mode = 2
 size_flags_vertical = 3
