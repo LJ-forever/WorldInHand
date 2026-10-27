@@ -340,8 +340,8 @@ func _build_intro_story() -> Dictionary:
 		"你是%s，一名%s。%s" % [player_name, player_role, player_lore],
 		"与你同行的，是%s，一名%s。%s你们并非偶然遇见：%s" % [companion_name, companion_role, companion_lore, reason],
 		"分开之后，她此刻在约 %d 格外的%s。荒原的视野被风沙与地形切得很碎，你未必能一直看见她。" % [distance, direction],
-		"终点是一座废弃的烽火台，传闻先到者能取走埋在台下的消息与赏金。你必须在 %d 回合内赶到，并先踏足 %d 处地点解除终点封印；封印未解时，烽火台的入口不会为你打开。若她先到且仍与你敌对，你的胜利将不再完美；若你们同回合抵达，则算并列。" % [
-			MAX_ROUNDS, EventManager.GOAL_SEAL_POI_COUNT,
+		"终点是一座废弃的烽火台，传闻先到者能取走埋在台下的消息与赏金。你必须在 %d 回合内赶到，并%s解除终点封印；封印未解时，烽火台的入口不会为你打开。若她先到且仍与你敌对，你的胜利将不再完美；若你们同回合抵达，则算并列。" % [
+			MAX_ROUNDS, EventManager.get_goal_seal_hint(),
 		],
 	]
 	return {

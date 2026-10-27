@@ -1833,6 +1833,120 @@
           }
         }
       ]
+    },
+    {
+      "id": "traveling_shop",
+      "name": "行商营地",
+      "trigger": "facility",
+      "terrains": [
+        "any"
+      ],
+      "weight": 0,
+      "cooldown": 0,
+      "per_character": false,
+      "text": "几匹骆驼围成一个临时的营地，货箱上摊着补给、药水和一枚成色不错的护符。行商把算盘拨得噼啪响，抬眼看你：“买还是卖？荒原上不赊账。”",
+      "choices": [
+        {
+          "id": "trade",
+          "text": "看看货物",
+          "check": null,
+          "resolution": "trade",
+          "ai_allowed": false,
+          "once_per_event": true,
+          "params": {
+            "can_decline": true,
+            "price_multiplier_on_great_success": 1.0,
+            "offers": [
+              {
+                "type": "buy",
+                "item_id": "supply",
+                "price": 5
+              },
+              {
+                "type": "buy",
+                "item_id": "potion",
+                "price": 15
+              },
+              {
+                "type": "buy",
+                "item_id": "rare_charm",
+                "price": 30
+              },
+              {
+                "type": "sell",
+                "item_id": "pelt",
+                "price": 6
+              },
+              {
+                "type": "sell",
+                "item_id": "herb",
+                "price": 3
+              }
+            ]
+          },
+          "outcomes": {
+            "success": {
+              "effects": [],
+              "note": "进入交易菜单；一次只结算一笔交易。"
+            }
+          }
+        },
+        {
+          "id": "leave",
+          "text": "离开营地",
+          "check": null,
+          "resolution": "check",
+          "outcomes": {
+            "success": {
+              "effects": [],
+              "note": "你向行商点头告别，继续上路。"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "roadside_inn",
+      "name": "路边旅店",
+      "trigger": "facility",
+      "terrains": [
+        "any"
+      ],
+      "weight": 0,
+      "cooldown": 0,
+      "per_character": false,
+      "text": "一间用旧车板搭起的旅店立在路旁，门口挂着一盏蒙尘的灯。老板娘掀开帘子，热汤的白气从屋里涌出来：“住店八个金币，热水和床位都有。”",
+      "choices": [
+        {
+          "id": "rest",
+          "text": "住店休息（8 金币）",
+          "check": null,
+          "resolution": "inn",
+          "params": {
+            "gold_cost": 8,
+            "heal_hp": 3,
+            "restore_ap": 2
+          },
+          "outcomes": {
+            "success": {
+              "effects": [],
+              "note": "支付金币后恢复 HP 与 AP；两项都不会超过上限。"
+            }
+          }
+        },
+        {
+          "id": "leave",
+          "text": "不打扰了",
+          "check": null,
+          "resolution": "check",
+          "outcomes": {
+            "success": {
+              "effects": [],
+              "note": "你谢过老板娘，重新走进风沙里。"
+            }
+          }
+        }
+      ]
     }
   ]
 }

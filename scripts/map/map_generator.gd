@@ -112,7 +112,7 @@ static func generate_exact(config: Dictionary, generated_seed: int, terrain_seed
 
 static func _fallback_config(source: Dictionary) -> Dictionary:
 	var cfg := normalize_config(DEFAULT_CONFIG)
-	for key in ["character_ids", "event_ids"]:
+	for key in ["character_ids", "event_ids", "landmark_counts"]:
 		if source.has(key):
 			cfg[key] = source[key]
 	return cfg
@@ -187,6 +187,7 @@ static func _generate_once(cfg: Dictionary, generation_seed: int, terrain_seed: 
 	_build_relief(map, rng)
 	_pick_start_goal(map, cfg)
 	_place_pois(map, cfg, rng)
+	_assign_landmarks(map, cfg)
 	_validate(map, cfg)
 	return map
 
@@ -973,6 +974,32 @@ static func _shuffle_ints(values: Array[int], rng: RandomNumberGenerator) -> voi
 		var tmp := values[i]
 		values[i] = values[j]
 		values[j] = tmp
+
+
+## 在 POI 放置完成后分配检查点/商店/旅店。
+## 使用独立随机流，绝不调用写入主 rng 的随机数，避免改变既有地图的 POI 布局。
+static func _assign_landmarks(map: MapData, cfg: Dictionary) -> void:
+	var counts = cfg.get("landmark_counts", {})
+	if typeof(counts) != TYPE_DICTIONARY or (counts as Dictionary).is_empty():
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("landmark|%s|%d|%d" % [map.map_id, map.generated_seed, map.terrain_seed])
+	var pool := map.poi_ids.duplicate()
+	_shuffle_ints(pool, rng)
+	var type_ids: Array[String] = []
+	for raw_id in (counts as Dictionary).keys():
+		type_ids.append(String(raw_id))
+	type_ids.sort()
+	var cursor := 0
+	for landmark_id in type_ids:
+		var count := maxi(0, int((counts as Dictionary).get(landmark_id, 0)))
+		for _i in range(count):
+			if cursor >= pool.size():
+				return
+			var cell := map.get_cell(pool[cursor])
+			cursor += 1
+			if cell != null:
+				cell.landmark_id = landmark_id
 
 
 static func _validate(map: MapData, cfg: Dictionary) -> void:

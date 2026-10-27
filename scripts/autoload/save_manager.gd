@@ -14,7 +14,7 @@ const SAVE_DIR := "user://saves"
 const SAVE_FORMAT := "zhenming.save"
 ## 结构不兼容时递增；读档只接受完全相同的版本。
 const SAVE_VERSION := 1
-const GAME_VERSION := "1.9"
+const GAME_VERSION := "1.10"
 const DEFAULT_SLOT := "auto"
 
 var last_error: String = ""

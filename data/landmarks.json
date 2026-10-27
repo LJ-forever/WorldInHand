@@ -1,0 +1,37 @@
+{
+  "landmarks": [
+    {
+      "id": "checkpoint",
+      "name": "封印石柱",
+      "short_name": "检查点",
+      "description": "一根半埋在风沙里的石柱，柱面刻着与终点同源的封印纹路。",
+      "color": "#3FB59A",
+      "always_visible": true,
+      "counts_for_seal": true,
+      "facility_event_id": "",
+      "hover_hint": "首次踏足激活；集齐全部检查点可解除终点封印。"
+    },
+    {
+      "id": "shop",
+      "name": "行商营地",
+      "short_name": "商店",
+      "description": "几匹骆驼围成的临时摊位，货箱上还沾着上一个绿洲的泥。",
+      "color": "#D9A441",
+      "always_visible": true,
+      "counts_for_seal": false,
+      "facility_event_id": "traveling_shop",
+      "hover_hint": "进入后可购买补给与药水，或出售兽皮与草药。"
+    },
+    {
+      "id": "inn",
+      "name": "路边旅店",
+      "short_name": "旅店",
+      "description": "荒原上少有的灯火与热汤，门口挂着一块被风磨白的木牌。",
+      "color": "#5C9BD6",
+      "always_visible": true,
+      "counts_for_seal": false,
+      "facility_event_id": "roadside_inn",
+      "hover_hint": "进入后可花金币休息，恢复 HP 与 AP。"
+    }
+  ]
+}

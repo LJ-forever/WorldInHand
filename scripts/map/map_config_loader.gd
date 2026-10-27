@@ -80,7 +80,30 @@ static func validate_config(config: Dictionary) -> Array[String]:
 		errors.append("randomize_seed 必须是布尔值")
 	_validate_content_ids(config, "character_ids", "characters", "角色", errors)
 	_validate_content_ids(config, "event_ids", "events", "事件", errors)
+	_validate_landmark_counts(config, errors)
 	return errors
+
+
+## 地标数量必须引用地标表中的 ID，且总数不能超过 POI 数；
+## 省略该字段表示这张地图不生成固定地标，沿用旧的地图与封印逻辑。
+static func _validate_landmark_counts(config: Dictionary, errors: Array[String]) -> void:
+	if not config.has("landmark_counts"):
+		return
+	var counts = config.get("landmark_counts")
+	if typeof(counts) != TYPE_DICTIONARY:
+		errors.append("landmark_counts 必须是对象")
+		return
+	var total := 0
+	for raw_id in (counts as Dictionary).keys():
+		var landmark_id := String(raw_id)
+		if not DataManager.has_record("landmarks", landmark_id):
+			errors.append("未知地标 %s" % landmark_id)
+		var count := int((counts as Dictionary)[raw_id])
+		if count < 0:
+			errors.append("地标 %s 的数量不能为负" % landmark_id)
+		total += maxi(0, count)
+	if total > int(config.get("poi_count", 0)):
+		errors.append("地标总数 %d 超过 poi_count %d" % [total, int(config.get("poi_count", 0))])
 
 
 ## 地图内容清单：字段可省略（回退到全量内容），但一旦声明就必须是非空、无重复、全部存在的 ID。

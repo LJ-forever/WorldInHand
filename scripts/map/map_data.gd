@@ -20,6 +20,8 @@ class Cell:
 	var terrain: String = "plain"
 	var elevation: int = 0
 	var poi_id: String = ""
+	## 固定地标类型（检查点 / 商店 / 旅店）；为空表示普通 POI 或非 POI 地块。
+	var landmark_id: String = ""
 	var neighbors: Array[int] = []
 	## 迷雾：曾经进入玩家当前视野（被动视野或侦察）。
 	var seen: bool = false
@@ -161,6 +163,34 @@ func elevation_at(cell_id: int, point: Vector2) -> float:
 func poi_of(cell_id: int) -> String:
 	var cell := get_cell(cell_id)
 	return cell.poi_id if cell != null else ""
+
+
+func landmark_id_of(cell_id: int) -> String:
+	var cell := get_cell(cell_id)
+	return cell.landmark_id if cell != null else ""
+
+
+func is_landmark_cell(cell_id: int) -> bool:
+	return not landmark_id_of(cell_id).is_empty()
+
+
+## 按地图 POI 顺序返回所有已分配地标的地块，供封印进度与渲染使用。
+func landmark_cell_ids() -> Array[int]:
+	var result: Array[int] = []
+	for cell_id in poi_ids:
+		if is_landmark_cell(cell_id):
+			result.append(cell_id)
+	return result
+
+
+func landmark_cells_of_type(landmark_id: String) -> Array[int]:
+	var result: Array[int] = []
+	if landmark_id.is_empty():
+		return result
+	for cell_id in poi_ids:
+		if landmark_id_of(cell_id) == landmark_id:
+			result.append(cell_id)
+	return result
 
 
 ## 三态迷雾：

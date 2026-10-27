@@ -102,7 +102,7 @@ tooltip_text = "旅途手册：操作、AP、侦察、袭击、背包与同伴"
 anchors_preset = 0
 offset_left = 16.0
 offset_top = 66.0
-offset_right = 486.0
+offset_right = 960.0
 offset_bottom = 102.0
 mouse_filter = 2
 

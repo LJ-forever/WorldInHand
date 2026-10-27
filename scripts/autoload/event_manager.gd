@@ -19,7 +19,7 @@ signal event_finished(event_id: String)
 signal dice_rolled(payload: Dictionary)
 signal log_added(text: String)
 
-const PRIORITY := {"goal": 4, "poi": 3, "enter_region": 2, "wander": 1}
+const PRIORITY := {"goal": 4, "poi": 3, "facility": 3, "enter_region": 2, "wander": 1}
 const MAX_QUEUE := 2
 const MAX_EVENTS_PER_ACTION := 2
 const MIN_EVENT_AP_SPACING_DECI := 30
@@ -351,6 +351,10 @@ func get_visited_poi_count() -> int:
 	return _visited_pois.size()
 
 
+func is_poi_visited(poi_id: String) -> bool:
+	return not poi_id.is_empty() and _visited_pois.has(poi_id)
+
+
 func get_total_poi_count() -> int:
 	return GameManager.map.poi_ids.size() if GameManager.map != null else 0
 
@@ -362,14 +366,63 @@ func get_exploration_text() -> String:
 	return "探索 %d/%d" % [mini(_visited_pois.size(), total), total]
 
 
-## 正常游玩必须探索 3 处地点才能进入终点；关闭随机事件时视为封印已解。
+## 检查点是 POI 上的固定地标；没有检查点的旧地图仍使用“任意 3 处 POI”的旧封印。
+func _checkpoint_cell_ids() -> Array[int]:
+	var result: Array[int] = []
+	var map := GameManager.map
+	if map == null:
+		return result
+	for cell_id in map.poi_ids:
+		var cell := map.get_cell(cell_id)
+		if cell == null or cell.landmark_id.is_empty():
+			continue
+		var record := DataManager.get_record("landmarks", cell.landmark_id)
+		if bool(record.get("counts_for_seal", false)):
+			result.append(cell_id)
+	return result
+
+
+func has_checkpoint_landmarks() -> bool:
+	return not _checkpoint_cell_ids().is_empty()
+
+
+func is_checkpoint_cell(cell_id: int) -> bool:
+	return _checkpoint_cell_ids().has(cell_id)
+
+
+## 检查点在封印目标中的序号（0 起）；不是检查点返回 -1。
+func checkpoint_index(cell_id: int) -> int:
+	return _checkpoint_cell_ids().find(cell_id)
+
+
+func get_goal_seal_progress() -> int:
+	if not random_events_enabled:
+		return 0
+	var checkpoints := _checkpoint_cell_ids()
+	if checkpoints.is_empty():
+		return mini(_visited_pois.size(), GOAL_SEAL_POI_COUNT)
+	if GameManager.map == null:
+		return 0
+	var visited := 0
+	for cell_id in checkpoints:
+		var cell := GameManager.map.get_cell(cell_id)
+		if cell != null and bool(_visited_pois.get(cell.poi_id, false)):
+			visited += 1
+	return visited
+
+
+## 正常游玩必须激活全部检查点才能进入终点；没有检查点的地图退回 3 处 POI。
+## 关闭随机事件时视为封印已解。
 func get_goal_seal_required() -> int:
-	return 0 if not random_events_enabled else GOAL_SEAL_POI_COUNT
+	if not random_events_enabled:
+		return 0
+	var checkpoints := _checkpoint_cell_ids()
+	return checkpoints.size() if not checkpoints.is_empty() else GOAL_SEAL_POI_COUNT
 
 
 func is_goal_seal_open() -> bool:
 	var required := get_goal_seal_required()
-	return required <= 0 or _visited_pois.size() >= required
+	return required <= 0 or get_goal_seal_progress() >= required
 
 
 func get_goal_seal_text() -> String:
@@ -378,7 +431,17 @@ func get_goal_seal_text() -> String:
 		return ""
 	if is_goal_seal_open():
 		return "终点封印已解"
-	return "终点封印 %d/%d" % [mini(_visited_pois.size(), required), required]
+	return "终点封印 %d/%d" % [mini(get_goal_seal_progress(), required), required]
+
+
+## 开场白/手册/阻塞提示共用的目标描述，避免旧地图被写成“检查点”。
+func get_goal_seal_hint() -> String:
+	var required := get_goal_seal_required()
+	if required <= 0:
+		return ""
+	if has_checkpoint_landmarks():
+		return "先激活 %d 处检查点" % required
+	return "先踏足 %d 处地点" % required
 
 
 func is_goal_guard_suppressed() -> bool:
@@ -390,8 +453,8 @@ func is_goal_guard_suppressed() -> bool:
 func goal_entry_block_reason() -> String:
 	if not is_goal_seal_open():
 		var required := get_goal_seal_required()
-		return "终点被封印封住：先探索 %d 处地点（当前 %d/%d），再回来。" % [
-			required, mini(_visited_pois.size(), required), required,
+		return "终点被封印封住：%s（当前 %d/%d），再回来。" % [
+			get_goal_seal_hint(), mini(get_goal_seal_progress(), required), required,
 		]
 	if is_goal_guard_suppressed():
 		return "守卫本回合不会再拦你，但也不会让路；下回合再来。"
@@ -481,9 +544,28 @@ func on_cell_entered(cell_id: int) -> bool:
 			_goal_counted = true
 		_enqueue_event("goal_guard", "goal", cell_id, counted)
 	elif not is_goal:
-		if random_events_enabled and not cell.poi_id.is_empty() and not _visited_pois.has(cell.poi_id):
+		var facility_event_id := _facility_event_id_for_cell(cell)
+		if random_events_enabled and not facility_event_id.is_empty():
+			var facility_note := ""
+			if not cell.poi_id.is_empty() and not _visited_pois.has(cell.poi_id):
+				facility_note = _grant_poi_discovery(cell_id, cell)
+			# 设施是固定地点：直接开始，不占随机事件队列与单局上限。
+			var facility_entry := {
+				"event_id": facility_event_id,
+				"trigger": "facility",
+				"cell_id": cell_id,
+				"priority": int(PRIORITY.get("facility", 3)),
+				"counted": false,
+				"note": facility_note,
+			}
+			if _start_event(facility_entry):
+				_previous_terrain = cell.terrain
+				return true
+		if random_events_enabled and facility_event_id.is_empty() \
+				and not cell.poi_id.is_empty() and not _visited_pois.has(cell.poi_id):
 			var discovery_note := _grant_poi_discovery(cell_id, cell)
-			if RNGManager.roll_chance(POI_TRIGGER_CHANCE, "event_trigger"):
+			# 检查点只负责封印进度，不抽随机 POI 事件。
+			if not is_checkpoint_cell(cell_id) and RNGManager.roll_chance(POI_TRIGGER_CHANCE, "event_trigger"):
 				var poi_event := _pick_weighted_event("poi", cell.terrain)
 				if not poi_event.is_empty():
 					_enqueue_event(String(poi_event.get("id", "")), "poi", cell_id, true, discovery_note)
@@ -539,10 +621,22 @@ func _grant_poi_discovery(cell_id: int, cell: MapData.Cell) -> String:
 		note = "首次踏足%s（地块 %d）：找到药水 ×1。" % [terrain_name, cell_id + 1]
 		if bool(potion_grant.get("queued", false)):
 			note += " 背包已满，请在背包页取舍。"
+	if is_checkpoint_cell(cell_id):
+		var seal_text := get_goal_seal_text()
+		if not seal_text.is_empty():
+			note += " 检查点已激活：%s。" % seal_text
 	GameManager.add_world_log(note)
 	GameManager.inventory_changed.emit()
 	GameManager.world_notice.emit(note)
 	return note
+
+
+## 商店/旅店的事件 ID 由地标表提供；普通 POI 与检查点返回空字符串。
+func _facility_event_id_for_cell(cell: MapData.Cell) -> String:
+	if cell == null or cell.landmark_id.is_empty():
+		return ""
+	var record := DataManager.get_record("landmarks", cell.landmark_id)
+	return String(record.get("facility_event_id", "")).strip_edges()
 
 
 ## 移动实际扣除 AP 后调用。每跨过 3 AP 做一次 13% 的 wander 判定。
@@ -628,6 +722,8 @@ func choose_choice(choice_id: String) -> Dictionary:
 			return _begin_sacrifice(choice, _check_payload(choice, "success", true, ""))
 		"heal_choice":
 			return _begin_heal(choice, _check_payload(choice, "success", true, ""))
+		"inn":
+			return _resolve_inn(choice)
 		_:
 			var payload := _roll_check(choice)
 			var level := String(payload.get("level", "success"))
@@ -652,7 +748,7 @@ func resolve_trade_offer(index: int) -> Dictionary:
 		var declined := _base_result(choice, level, payload)
 		declined["kind"] = "outcome"
 		declined["level_name"] = "放弃交易"
-		declined["outcome_note"] = "你放弃了购买，金币没有变化。"
+		declined["outcome_note"] = "你放弃了这次交易，金币没有变化。"
 		declined["effect_messages"] = []
 		declined["status_text"] = GameManager.player.status_display_text()
 		declined["status_details"] = GameManager.player.status_detail_text()
@@ -679,6 +775,19 @@ func resolve_trade_offer(index: int) -> Dictionary:
 		messages.append(gain_text)
 		_add_cost(costs, cost_text, "gold")
 		_add_reward(rewards, gain_text, "item", _item_reward_hint(item_id))
+	elif String(offer.get("type", "")) == "sell":
+		var sell_price := int(offer.get("price", 0))
+		var sold_id := String(offer.get("item_id", ""))
+		var removed := player.remove_item(sold_id, 1)
+		if removed <= 0:
+			return _error_result("你没有可出售的%s。" % _item_name(sold_id))
+		player.gold += sell_price
+		var sold_text := "失去 %s ×1。" % _item_name(sold_id)
+		var gold_text := "获得 %d 金币。" % sell_price
+		messages.append(sold_text)
+		messages.append(gold_text)
+		_add_cost(costs, sold_text, "item")
+		_add_reward(rewards, gold_text, "gold", "可在商店或商队继续交易")
 	else:
 		var give_id := String(offer.get("give_id", ""))
 		var receive_id := String(offer.get("receive_id", ""))
@@ -696,7 +805,7 @@ func resolve_trade_offer(index: int) -> Dictionary:
 	var result := _base_result(choice, level, payload)
 	result["kind"] = "outcome"
 	result["level_name"] = "交易达成"
-	result["outcome_note"] = "本次商队事件已交易。"
+	result["outcome_note"] = "本次交易已完成。"
 	result["effect_messages"] = messages
 	result["reward_entries"] = rewards
 	result["cost_entries"] = costs
@@ -1159,6 +1268,12 @@ func _describe_choice(choice: Dictionary) -> Dictionary:
 		info["disabled"] = true
 		info["reason"] = "你已被通缉，商队拒绝交易。"
 		return info
+	if String(choice.get("resolution", "")) == "inn":
+		var inn_reason := _inn_block_reason(choice)
+		if not inn_reason.is_empty():
+			info["disabled"] = true
+			info["reason"] = inn_reason
+		return info
 	if String(choice.get("resolution", "")) == "item_sacrifice":
 		var params: Dictionary = choice.get("params", {})
 		var allowed: Array = params.get("allow_types", [])
@@ -1498,6 +1613,14 @@ func _begin_trade(choice: Dictionary, level: String, payload: Dictionary) -> Dic
 				entry["disabled"] = true
 				entry["reason"] = "金币不足（需要 %d）。" % price
 			entry["label"] = "购买 %s（%d 金币）" % [_item_name(String(entry["item_id"])), price]
+		elif entry["type"] == "sell":
+			var sell_price := int(offer.get("price", 0))
+			entry["price"] = sell_price
+			var sell_id := String(entry["item_id"])
+			if player.item_count(sell_id) <= 0:
+				entry["disabled"] = true
+				entry["reason"] = "你没有可出售的%s。" % _item_name(sell_id)
+			entry["label"] = "出售 %s（+%d 金币）" % [_item_name(sell_id), sell_price]
 		else:
 			var give_count := int(entry["give_count"])
 			if player.item_count(String(entry["give_id"])) < give_count:
@@ -1570,6 +1693,79 @@ func _begin_heal(choice: Dictionary, payload: Dictionary) -> Dictionary:
 	result["kind"] = "heal_menu"
 	result["title"] = "饮水"
 	result["options"] = ["hp", "ap"]
+	_emit_progress(result)
+	return result
+
+
+func _inn_block_reason(choice: Dictionary) -> String:
+	var player := GameManager.player
+	if player == null:
+		return "当前没有可休息的角色。"
+	var params: Dictionary = choice.get("params", {})
+	var cost := maxi(0, int(params.get("gold_cost", 0)))
+	var heal_hp := maxi(0, int(params.get("heal_hp", 0)))
+	var restore_ap := maxi(0, int(params.get("restore_ap", 0)))
+	if player.gold < cost:
+		return "金币不足（需要 %d，当前 %d）。" % [cost, player.gold]
+	var hp_full := heal_hp <= 0 or player.hp >= player.hp_max
+	var ap_full := restore_ap <= 0 or player.ap_deci >= player.ap_max_deci
+	if hp_full and ap_full:
+		return "你的 HP 与 AP 都已满，不必住店。"
+	return ""
+
+
+## 旅店固定花费金币恢复 HP/AP；恢复量按上限截断，不做检定。
+func _resolve_inn(choice: Dictionary) -> Dictionary:
+	var block := _inn_block_reason(choice)
+	if not block.is_empty():
+		return _error_result(block)
+	var player := GameManager.player
+	var params: Dictionary = choice.get("params", {})
+	var cost := maxi(0, int(params.get("gold_cost", 0)))
+	var heal_hp := maxi(0, int(params.get("heal_hp", 0)))
+	var restore_ap := maxi(0, int(params.get("restore_ap", 0)))
+	var messages: Array[String] = []
+	var rewards: Array[Dictionary] = []
+	var costs: Array[Dictionary] = []
+	var hp_before := player.hp
+	var ap_before := player.ap_deci
+	if cost > 0:
+		player.gold -= cost
+		var cost_text := "支付 %d 金币。" % cost
+		messages.append(cost_text)
+		_add_cost(costs, cost_text, "gold")
+	if heal_hp > 0:
+		player.heal(heal_hp)
+		var hp_gained := player.hp - hp_before
+		if hp_gained > 0:
+			var hp_text := "HP +%d（%d/%d）。" % [hp_gained, player.hp, player.hp_max]
+			messages.append(hp_text)
+			_add_reward(rewards, hp_text, "hp")
+	if restore_ap > 0:
+		var ap_cap := maxi(player.ap_deci, player.ap_max_deci)
+		player.ap_deci = mini(ap_cap, player.ap_deci + restore_ap * 10)
+		var ap_gained := player.ap_deci - ap_before
+		if ap_gained > 0:
+			var ap_text := "AP +%.1f（%.1f/%.1f）。" % [
+				ap_gained / 10.0, player.ap_deci / 10.0, player.ap_max_deci / 10.0,
+			]
+			messages.append(ap_text)
+			_add_reward(rewards, ap_text, "ap", "本回合可以走得更远")
+	if messages.is_empty():
+		messages.append("你休息了片刻，但状态已经很好。")
+	var result := _base_result(choice, "success", _check_payload(choice, "success", true, ""))
+	result["kind"] = "outcome"
+	result["level_name"] = "休息"
+	result["outcome_note"] = "你在旅店的热汤和床铺里缓过劲来。"
+	result["effect_messages"] = messages
+	result["reward_entries"] = rewards
+	result["cost_entries"] = costs
+	result["insight_entries"] = []
+	result["hp"] = player.hp
+	result["ap_deci"] = player.ap_deci
+	result["gold"] = player.gold
+	result["status_text"] = player.status_display_text()
+	result["status_details"] = player.status_detail_text()
 	_emit_progress(result)
 	return result
 

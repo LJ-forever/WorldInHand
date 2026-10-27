@@ -531,7 +531,11 @@ func _auto_resolve_active_event() -> void:
 			inner += 1
 			match String(result.get("kind", "")):
 				"trade_menu":
-					result = EventManager.resolve_trade_offer(-1)
+					var trade_offers: Array = result.get("offers", [])
+					var offer_index := -1
+					if EventManager.active_event_id == "traveling_shop":
+						offer_index = _pick_shop_offer(trade_offers)
+					result = EventManager.resolve_trade_offer(offer_index)
 				"steal_menu":
 					var steal_items: Array = result.get("items", [])
 					if steal_items.is_empty():
@@ -592,6 +596,30 @@ func _first_available_choice(choices: Array, order: Array) -> String:
 			continue
 		return id
 	return ""
+
+
+## 行商营地：先补足补给/药水，背包有材料时卖一件；都不需要就离开。
+func _pick_shop_offer(offers: Array) -> int:
+	var player := GameManager.player
+	if player == null:
+		return -1
+	var potion_index := -1
+	var sell_index := -1
+	for i in range(offers.size()):
+		var offer: Dictionary = offers[i]
+		if bool(offer.get("disabled", false)):
+			continue
+		var kind := String(offer.get("type", ""))
+		var item_id := String(offer.get("item_id", ""))
+		if kind == "buy" and item_id == "supply" and player.item_count("supply") < 2:
+			return i
+		if kind == "buy" and item_id == "potion" and player.item_count("potion") <= 0:
+			potion_index = i
+		elif kind == "sell" and sell_index < 0 and player.item_count(item_id) > 0:
+			sell_index = i
+	if potion_index >= 0:
+		return potion_index
+	return sell_index
 
 
 ## 守卫决策是节奏的关键：赶路/谨慎优先交出物品，激进优先硬闯；
@@ -787,14 +815,24 @@ func _choose_explore_target() -> int:
 	return best
 
 
-## 终点封印没解时先去最近的未访问 POI；解封后直取终点。
-## 赶路 bot 视为熟悉地图（知道 POI 位置），这是对“最快通关”最有利的假设。
+## 终点封印没解时先去最近的未激活检查点；没有检查点的旧地图退回任意 POI。
+## 赶路 bot 视为熟悉地图（知道检查点位置），这是对“最快通关”最有利的假设。
 func _choose_goal_or_seal_target() -> int:
 	var map := GameManager.map
 	if map == null:
 		return -1
 	if EventManager.is_goal_seal_open():
 		return map.goal_id
+	if EventManager.has_checkpoint_landmarks():
+		var checkpoints: Array[int] = []
+		for cell_id in map.landmark_cells_of_type("checkpoint"):
+			var checkpoint := map.get_cell(cell_id)
+			if checkpoint == null or EventManager.is_poi_visited(checkpoint.poi_id):
+				continue
+			checkpoints.append(cell_id)
+		if checkpoints.is_empty():
+			return map.goal_id
+		return _nearest_by_graph(checkpoints)
 	var candidates: Array[int] = []
 	for cell_id in map.poi_ids:
 		var cell := map.get_cell(cell_id)

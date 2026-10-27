@@ -64,6 +64,7 @@ const CHRONICLE_TOP_COLLAPSED := -238.0
 @onready var dice_overlay = $DiceOverlay
 
 var _hovered: int = -1
+var _hovered_marker: int = -1
 var _map_view = null
 var _toast_token: int = 0
 var _last_seen_move_message: String = ""
@@ -95,6 +96,7 @@ func _ready() -> void:
 	_map_view = get_parent().get_node_or_null("MapView")
 	if _map_view != null:
 		_map_view.hovered_cell_changed.connect(_on_hovered_cell_changed)
+		_map_view.hovered_marker_changed.connect(_on_hovered_marker_changed)
 		_map_view.hover_position_changed.connect(_on_hover_position_changed)
 		_map_view.stroke_rejected.connect(_on_stroke_rejected)
 
@@ -324,7 +326,18 @@ func _on_quit_game() -> void:
 
 func _update_hover_label() -> void:
 	var map := GameManager.map
-	if map == null or _hovered < 0 or map.get_cell(_hovered) == null:
+	if map == null:
+		hover_label.text = "把光标移到一个地块上"
+		hover_label.add_theme_color_override("font_color", Color(0.72, 0.70, 0.61))
+		return
+	# 固定地点的小点优先于地块信息：地图上所有非玩家/同伴标记都能悬停查看。
+	if _hovered_marker >= 0:
+		var marker_text := _marker_hover_text(_hovered_marker)
+		if not marker_text.is_empty():
+			hover_label.text = marker_text
+			hover_label.add_theme_color_override("font_color", _marker_hover_color(_hovered_marker))
+			return
+	if _hovered < 0 or map.get_cell(_hovered) == null:
 		hover_label.text = "把光标移到一个地块上"
 		hover_label.add_theme_color_override("font_color", Color(0.72, 0.70, 0.61))
 		return
@@ -352,6 +365,205 @@ func _update_hover_label() -> void:
 		_hovered + 1, map.terrain_display_name(cell.terrain), relief, fog_suffix,
 	]
 	hover_label.add_theme_color_override("font_color", Color(0.86, 0.82, 0.71))
+
+
+func _marker_hover_text(cell_id: int) -> String:
+	var map := GameManager.map
+	if map == null:
+		return ""
+	var cell := map.get_cell(cell_id)
+	if cell == null:
+		return ""
+	if cell_id == map.goal_id:
+		return _goal_hover_text()
+	if cell_id == map.start_id:
+		return _start_hover_text()
+	if not cell.landmark_id.is_empty():
+		return _landmark_hover_text(cell)
+	if not cell.poi_id.is_empty():
+		return _poi_hover_text(cell)
+	return ""
+
+
+func _marker_distance_text(cell_id: int) -> String:
+	var player := GameManager.player
+	var map := GameManager.map
+	if player == null or map == null:
+		return ""
+	if player.cell_id == cell_id:
+		return "你正在此处"
+	var distance := map.graph_distance(player.cell_id, cell_id)
+	if distance < 0:
+		return "当前无法抵达"
+	return "距你 %d 格" % distance
+
+
+func _start_hover_text() -> String:
+	var map := GameManager.map
+	if map == null:
+		return ""
+	var distance := _marker_distance_text(map.start_id)
+	if distance.is_empty():
+		return "起点 · 荒原入口"
+	return "起点 · 荒原入口 · " + distance
+
+
+func _goal_hover_text() -> String:
+	var map := GameManager.map
+	if map == null:
+		return ""
+	var parts: Array[String] = ["终点 · 烽火台"]
+	var distance := _marker_distance_text(map.goal_id)
+	if not distance.is_empty():
+		parts.append(distance)
+	var required := EventManager.get_goal_seal_required()
+	if required <= 0:
+		parts.append("封印未启用")
+	elif EventManager.is_goal_seal_open():
+		parts.append("封印已解 · 入口开启")
+	else:
+		var progress := mini(EventManager.get_goal_seal_progress(), required)
+		if EventManager.has_checkpoint_landmarks():
+			parts.append("封印 %d/%d · 需激活全部检查点" % [progress, required])
+		else:
+			parts.append("封印 %d/%d · 需踏足地点" % [progress, required])
+	return " · ".join(parts)
+
+
+func _landmark_hover_text(cell: MapData.Cell) -> String:
+	var record := DataManager.get_record("landmarks", cell.landmark_id)
+	var short_name := String(record.get("short_name", ""))
+	var full_name := String(record.get("name", ""))
+	var parts: Array[String] = []
+	if not short_name.is_empty():
+		parts.append(short_name)
+	if not full_name.is_empty() and full_name != short_name:
+		parts.append(full_name)
+	var distance := _marker_distance_text(cell.id)
+	if not distance.is_empty():
+		parts.append(distance)
+	match cell.landmark_id:
+		"checkpoint":
+			var required := EventManager.get_goal_seal_required()
+			var index := EventManager.checkpoint_index(cell.id)
+			if required > 0 and index >= 0:
+				if parts.is_empty():
+					parts.append("检查点")
+				parts[0] = "检查点 %d/%d" % [index + 1, required]
+			if EventManager.is_poi_visited(cell.poi_id):
+				parts.append("已激活")
+			else:
+				parts.append("未激活 · 踏足即计入封印")
+		"shop":
+			var shop_summary := _trade_offer_summary(String(record.get("facility_event_id", "")))
+			if not shop_summary.is_empty():
+				parts.append(shop_summary)
+		"inn":
+			var inn_summary := _inn_hover_summary(String(record.get("facility_event_id", "")))
+			if not inn_summary.is_empty():
+				parts.append(inn_summary)
+		_:
+			var hint := String(record.get("hover_hint", ""))
+			if not hint.is_empty():
+				parts.append(hint)
+	return " · ".join(parts)
+
+
+func _trade_offer_summary(event_id: String) -> String:
+	if event_id.is_empty():
+		return ""
+	var event := DataManager.get_record("events", event_id)
+	var offers: Array = []
+	for raw_choice in event.get("choices", []):
+		var choice: Dictionary = raw_choice
+		if String(choice.get("resolution", "")) != "trade":
+			continue
+		var params: Dictionary = choice.get("params", {})
+		offers = params.get("offers", [])
+		break
+	if offers.is_empty():
+		return ""
+	var buys: Array[String] = []
+	var sells: Array[String] = []
+	for raw_offer in offers:
+		var offer: Dictionary = raw_offer
+		var item_name := _marker_item_name(String(offer.get("item_id", "")))
+		var price := int(offer.get("price", 0))
+		match String(offer.get("type", "")):
+			"buy":
+				buys.append("%s%d" % [item_name, price])
+			"sell":
+				sells.append("%s%d" % [item_name, price])
+	var parts: Array[String] = []
+	if not buys.is_empty():
+		parts.append("买 " + "、".join(buys))
+	if not sells.is_empty():
+		parts.append("卖 " + "、".join(sells))
+	if parts.is_empty():
+		return ""
+	return " · ".join(parts) + " 金币"
+
+
+func _inn_hover_summary(event_id: String) -> String:
+	if event_id.is_empty():
+		return ""
+	var event := DataManager.get_record("events", event_id)
+	for raw_choice in event.get("choices", []):
+		var choice: Dictionary = raw_choice
+		if String(choice.get("resolution", "")) != "inn":
+			continue
+		var params: Dictionary = choice.get("params", {})
+		var cost := maxi(0, int(params.get("gold_cost", 0)))
+		var heal_hp := maxi(0, int(params.get("heal_hp", 0)))
+		var restore_ap := maxi(0, int(params.get("restore_ap", 0)))
+		var text := "休息 %d 金：HP+%d、AP+%d" % [cost, heal_hp, restore_ap]
+		var player := GameManager.player
+		if player != null:
+			if player.gold < cost:
+				text += "（金币不足）"
+			elif player.hp >= player.hp_max and player.ap_deci >= player.ap_max_deci:
+				text += "（状态已满）"
+		return text
+	return ""
+
+
+func _marker_item_name(item_id: String) -> String:
+	if item_id.is_empty():
+		return "?"
+	var record := DataManager.get_record("items", item_id)
+	return String(record.get("name", item_id))
+
+
+func _poi_hover_text(cell: MapData.Cell) -> String:
+	var map := GameManager.map
+	if map == null:
+		return ""
+	var visited := EventManager.is_poi_visited(cell.poi_id)
+	var parts: Array[String] = [
+		"已探索地点" if visited else "已标记地点",
+		map.terrain_display_name(cell.terrain),
+	]
+	var distance := _marker_distance_text(cell.id)
+	if not distance.is_empty():
+		parts.append(distance)
+	if not visited:
+		parts.append("首次踏足可得发现奖励")
+	return " · ".join(parts)
+
+
+func _marker_hover_color(cell_id: int) -> Color:
+	var map := GameManager.map
+	if map == null:
+		return Color(0.86, 0.82, 0.71)
+	if cell_id == map.goal_id:
+		return Color(0.96, 0.80, 0.36)
+	if cell_id == map.start_id:
+		return Color(0.52, 0.88, 0.62)
+	var cell := map.get_cell(cell_id)
+	if cell != null and not cell.landmark_id.is_empty():
+		var record := DataManager.get_record("landmarks", cell.landmark_id)
+		return Color.from_string(String(record.get("color", "#D9A441")), Color(0.85, 0.75, 0.40))
+	return Color(0.94, 0.76, 0.32)
 
 
 func _update_companion_strip(companion_name: String) -> void:
@@ -585,6 +797,11 @@ func _show_toast(message: String, warning: bool = false) -> void:
 
 func _on_hovered_cell_changed(cell_id: int) -> void:
 	_hovered = cell_id
+	_update_hover_label()
+
+
+func _on_hovered_marker_changed(cell_id: int) -> void:
+	_hovered_marker = cell_id
 	_update_hover_label()
 
 

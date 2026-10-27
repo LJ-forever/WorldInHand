@@ -5,6 +5,7 @@ extends Node2D
 ## 移动阶段读取 GameManager.visual_position，沿玩家画出的折线播放动画。
 
 signal hovered_cell_changed(cell_id: int)
+signal hovered_marker_changed(cell_id: int)
 signal hover_position_changed(point: Vector2)
 signal stroke_rejected(message: String)
 
@@ -17,6 +18,7 @@ const ZOOM_STEP := 1.14
 const PAN_KEEP_VISIBLE := 96.0
 
 var _hovered: int = INVALID_CELL
+var _hovered_marker: int = INVALID_CELL
 var _hover_position: Vector2 = Vector2.ZERO
 var _drawing: bool = false
 var _stroke: PackedVector2Array = PackedVector2Array()
@@ -106,6 +108,8 @@ func _reset_view() -> void:
 	var map_center_screen := Vector2(viewport_size.x * 0.5, (safe_top + safe_bottom) * 0.5)
 	_pan = map_center_screen - map.bounds.get_center() * _zoom
 	_view_initialized = true
+	_hovered = INVALID_CELL
+	_hovered_marker = INVALID_CELL
 	_clamp_pan()
 	queue_redraw()
 
@@ -335,6 +339,13 @@ func _draw_polygon_outline(polygon: PackedVector2Array, color: Color, width: flo
 
 func _draw_landmarks(map: MapData) -> void:
 	for poi_id in map.poi_ids:
+		var cell := map.get_cell(poi_id)
+		if cell == null:
+			continue
+		if not cell.landmark_id.is_empty():
+			if _marker_visible_at(poi_id):
+				_draw_facility_marker(map, cell)
+			continue
 		if not map.is_poi_known(poi_id):
 			continue
 		var center := map.cell_center(poi_id)
@@ -342,15 +353,123 @@ func _draw_landmarks(map: MapData) -> void:
 		var visible := map.is_point_in_current_vision(center) or poi_state == MapData.FogState.VISIBLE
 		if not visible and poi_state != MapData.FogState.REMEMBERED:
 			continue
-		var gold := Color(0.94, 0.76, 0.32, 0.95 if visible else 0.45)
-		draw_circle(center, 5.0, Color(0.10, 0.08, 0.04, 0.85), true, -1.0, true)
-		draw_circle(center, 3.4, gold, true, -1.0, true)
-		draw_arc(center, 7.0, 0.0, TAU, 20, Color(0.94, 0.76, 0.32, 0.55 if visible else 0.35), 1.0, true)
+		_draw_poi_dot(center, visible)
 	# 起点与终点始终可辨：设计只保证“最终目标点”可见，起点是玩家已知位置。
 	_draw_marker(map.cell_center(map.start_id), Color(0.42, 0.82, 0.52), false)
 	var goal_center := map.cell_center(map.goal_id)
 	_draw_marker(goal_center, Color(0.96, 0.78, 0.30), true)
 	draw_arc(goal_center, 15.0, 0.0, TAU, 32, Color(0.96, 0.78, 0.30, 0.35), 2.0, true)
+	_draw_marker_hover_ring(map)
+
+
+func _draw_poi_dot(center: Vector2, visible: bool) -> void:
+	var gold := Color(0.94, 0.76, 0.32, 0.95 if visible else 0.45)
+	draw_circle(center, 5.0, Color(0.10, 0.08, 0.04, 0.85), true, -1.0, true)
+	draw_circle(center, 3.4, gold, true, -1.0, true)
+	draw_arc(center, 7.0, 0.0, TAU, 20, Color(0.94, 0.76, 0.32, 0.55 if visible else 0.35), 1.0, true)
+
+
+## 固定地标标记：always_visible 的地标始终可见；离开视野后只降低亮度。
+func _draw_facility_marker(map: MapData, cell: MapData.Cell) -> void:
+	var center := map.cell_center(cell.id)
+	var state := map.fog_state(cell.id)
+	var visible := map.is_point_in_current_vision(center) or state == MapData.FogState.VISIBLE
+	var alpha := 1.0 if visible else 0.55
+	var color := _landmark_color(cell.landmark_id, alpha)
+	draw_circle(center, 7.8, Color(0.05, 0.05, 0.04, 0.82), true, -1.0, true)
+	match cell.landmark_id:
+		"checkpoint":
+			var diamond := PackedVector2Array([
+				center + Vector2(0.0, -6.2), center + Vector2(6.2, 0.0),
+				center + Vector2(0.0, 6.2), center + Vector2(-6.2, 0.0),
+				center + Vector2(0.0, -6.2),
+			])
+			draw_polyline(diamond, color, 2.0, true)
+			draw_circle(center, 2.2, color, true, -1.0, true)
+		"shop":
+			var shop_rect := Rect2(center - Vector2(4.6, 4.6), Vector2(9.2, 9.2))
+			draw_rect(shop_rect, color, true)
+			draw_rect(shop_rect, Color(0.05, 0.05, 0.04, 0.70 * alpha), false, 1.0)
+		"inn":
+			draw_circle(center, 4.9, color, true, -1.0, true)
+			draw_line(
+				center + Vector2(-3.2, 1.0), center + Vector2(3.2, 1.0),
+				Color(0.05, 0.05, 0.04, 0.72 * alpha), 1.2, true
+			)
+		_:
+			draw_circle(center, 3.6, color, true, -1.0, true)
+	var halo := color
+	halo.a = 0.36 * alpha
+	draw_arc(center, 9.0, 0.0, TAU, 20, halo, 1.0, true)
+
+
+func _draw_marker_hover_ring(map: MapData) -> void:
+	if _hovered_marker < 0 or not _marker_visible_at(_hovered_marker):
+		return
+	var cell := map.get_cell(_hovered_marker)
+	var ring_color := Color(0.96, 0.96, 0.90, 0.92)
+	if cell != null and not cell.landmark_id.is_empty():
+		ring_color = _landmark_color(cell.landmark_id, 0.95)
+	elif _hovered_marker == map.goal_id:
+		ring_color = Color(0.96, 0.78, 0.30, 0.95)
+	elif _hovered_marker == map.start_id:
+		ring_color = Color(0.42, 0.82, 0.52, 0.95)
+	draw_arc(map.cell_center(_hovered_marker), 12.5, 0.0, TAU, 30, ring_color, 1.6, true)
+
+
+func _landmark_color(landmark_id: String, alpha: float) -> Color:
+	var record := DataManager.get_record("landmarks", landmark_id)
+	var color := Color.from_string(String(record.get("color", "#D9A441")), Color(0.85, 0.75, 0.40))
+	color.a = alpha
+	return color
+
+
+func _marker_visible_at(cell_id: int) -> bool:
+	var map := GameManager.map
+	if map == null or map.get_cell(cell_id) == null:
+		return false
+	if cell_id == map.start_id or cell_id == map.goal_id:
+		return true
+	var cell := map.get_cell(cell_id)
+	if not cell.landmark_id.is_empty():
+		var record := DataManager.get_record("landmarks", cell.landmark_id)
+		if bool(record.get("always_visible", true)):
+			return true
+	if not map.is_poi_known(cell_id):
+		return false
+	var state := map.fog_state(cell_id)
+	return state == MapData.FogState.VISIBLE or state == MapData.FogState.REMEMBERED
+
+
+func _marker_candidates() -> Array[int]:
+	var result: Array[int] = []
+	var map := GameManager.map
+	if map == null:
+		return result
+	result.append_array(map.poi_ids)
+	if map.start_id >= 0:
+		result.append(map.start_id)
+	if map.goal_id >= 0:
+		result.append(map.goal_id)
+	return result
+
+
+## 标记是固定位置的小点，用屏幕半径做命中检测，避免缩放后难以点中。
+func _pick_marker_at_screen(screen_point: Vector2) -> int:
+	var map := GameManager.map
+	if map == null:
+		return INVALID_CELL
+	var radius := maxf(16.0, 10.0 * _zoom)
+	var best := INVALID_CELL
+	var best_distance := INF
+	for cell_id in _marker_candidates():
+		if not _marker_visible_at(cell_id):
+			continue
+		var distance := _world_to_screen(map.cell_center(cell_id)).distance_to(screen_point)
+		if distance <= radius and distance < best_distance:
+			best_distance = distance
+			best = cell_id
+	return best
 
 
 func _draw_marker(center: Vector2, color: Color, double_ring: bool) -> void:
@@ -598,6 +717,11 @@ func _update_hover(point: Vector2) -> void:
 	if map == null:
 		return
 	_hover_position = point
+	var marker_id := _pick_marker_at_screen(_world_to_screen(point))
+	if marker_id != _hovered_marker:
+		_hovered_marker = marker_id
+		hovered_marker_changed.emit(marker_id)
+		queue_redraw()
 	var cell_id := map.cell_at_point(point)
 	if cell_id != _hovered:
 		_hovered = cell_id

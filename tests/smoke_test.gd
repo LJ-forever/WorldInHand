@@ -17,6 +17,7 @@ func _ready() -> void:
 	_test_ap_exhaustion()
 	_test_turn_actions()
 	_test_event_system()
+	_test_landmarks_and_facilities()
 	await _test_game_scene()
 	await _test_menu_scenes()
 	await _test_map_content_manifest()
@@ -81,6 +82,33 @@ func _test_map_generation() -> void:
 	_check(map.boundary.size() >= 10, "irregular boundary has at least 10 vertices")
 	_check(map.terrain_counts.size() >= 3, "at least 3 terrain types")
 	_check(map.poi_ids.size() == int(config.get("poi_count", 8)), "POI count matches config")
+	var checkpoint_cells := map.landmark_cells_of_type("checkpoint")
+	var shop_cells := map.landmark_cells_of_type("shop")
+	var inn_cells := map.landmark_cells_of_type("inn")
+	_check(checkpoint_cells.size() == 3, "checkpoint landmarks are assigned to three POIs")
+	_check(shop_cells.size() == 1, "one shop landmark is assigned")
+	_check(inn_cells.size() == 1, "one inn landmark is assigned")
+	_check(map.landmark_cell_ids().size() == 5, "all five fixed landmarks are distinct POI cells")
+	var landmark_ids_are_known := true
+	for landmark_id in ["checkpoint", "shop", "inn"]:
+		if not DataManager.has_record("landmarks", landmark_id):
+			landmark_ids_are_known = false
+	_check(landmark_ids_are_known, "landmark table exposes checkpoint, shop and inn")
+	var landmarks_are_pois := true
+	for landmark_cell in map.landmark_cell_ids():
+		if not map.poi_ids.has(landmark_cell):
+			landmarks_are_pois = false
+	_check(landmarks_are_pois, "fixed landmarks live on POI cells")
+	var same_map: MapData = MapGenerator.generate_exact(map.config, map.generated_seed, map.terrain_seed)
+	_check(same_map != null, "landmark map can be regenerated exactly for saves")
+	if same_map != null:
+		_check(same_map.landmark_cells_of_type("checkpoint") == checkpoint_cells, "checkpoint placement is deterministic")
+		_check(same_map.landmark_cells_of_type("shop") == shop_cells, "shop placement is deterministic")
+		_check(same_map.landmark_cells_of_type("inn") == inn_cells, "inn placement is deterministic")
+	var legacy_config := config.duplicate(true)
+	legacy_config.erase("landmark_counts")
+	var legacy_map := MapGenerator.generate(legacy_config)
+	_check(legacy_map.landmark_cell_ids().is_empty(), "legacy config without landmark_counts has no fixed landmarks")
 	_check(map.start_id != map.goal_id, "start and goal are different cells")
 	var hops := map.graph_distance(map.start_id, map.goal_id)
 	var depth: Dictionary = {map.start_id: 0}
@@ -635,7 +663,7 @@ func _test_event_system() -> void:
 		"caravan", "bandit_ambush", "herb_patch", "goal_guard",
 		"wildfire", "sandstorm", "old_well", "lost",
 		"abandoned_camp", "wanderer", "cliff", "ancient_stele",
-		"fallen_tree", "mirage", "pilgrim",
+		"fallen_tree", "mirage", "pilgrim", "traveling_shop", "roadside_inn",
 	]
 	var loaded_ids: Array[String] = []
 	var invalid_events := 0
@@ -654,7 +682,7 @@ func _test_event_system() -> void:
 	for expected in expected_ids:
 		if not loaded_ids.has(expected):
 			invalid_events += 1
-	_check(events.size() == expected_ids.size(), "all 15 events are loaded")
+	_check(events.size() == expected_ids.size(), "all %d events are loaded" % expected_ids.size())
 	_check(invalid_events == 0, "every event has name, text, trigger, cooldown and choices")
 	var wander_coverage := {"forest": 0, "desert": 0, "plain": 0}
 	for record in events:
@@ -1106,6 +1134,111 @@ func _find_event_seed(double_six: bool, double_one: bool = false) -> int:
 	return 1
 
 
+func _test_landmarks_and_facilities() -> void:
+	print("-- landmarks / facilities --")
+	var configs := MapConfigLoader.list_configs()
+	_start_game("lin_xiao", configs[0])
+	var map := GameManager.map
+	var player := GameManager.player
+	EventManager.begin_run(map, player)
+	_check(EventManager.get_goal_seal_required() == 3, "checkpoint maps require three checkpoints")
+	_check(EventManager.get_goal_seal_hint().contains("检查点"), "seal hint names checkpoints")
+	_check(EventManager.get_goal_seal_progress() == 0, "checkpoint seal starts at zero")
+
+	var checkpoints := map.landmark_cells_of_type("checkpoint")
+	_check(checkpoints.size() == 3, "checkpoint map exposes three seal targets")
+	var checkpoint_entered := 0
+	for checkpoint_id in checkpoints:
+		EventManager._previous_terrain = map.terrain_of(checkpoint_id)
+		var started := EventManager.on_cell_entered(checkpoint_id)
+		_check(not started and not EventManager.is_event_active(), "checkpoint entry does not start a random event")
+		checkpoint_entered += 1
+		_check(EventManager.get_goal_seal_progress() == checkpoint_entered, "each checkpoint advances the seal")
+	_check(EventManager.is_goal_seal_open(), "all checkpoints open the goal seal")
+	_check(EventManager.get_goal_seal_text().contains("已解"), "seal text reports an open seal")
+
+	# 没有地标的旧地图/旧存档仍然回退到“任意 3 处 POI”。
+	var saved_landmarks := {}
+	for cell_id in map.poi_ids:
+		saved_landmarks[cell_id] = map.get_cell(cell_id).landmark_id
+		map.get_cell(cell_id).landmark_id = ""
+	_check(not EventManager.has_checkpoint_landmarks(), "clearing checkpoints falls back to the legacy seal")
+	_check(EventManager.get_goal_seal_required() == EventManager.GOAL_SEAL_POI_COUNT, "legacy seal still requires three POIs")
+	_check(EventManager.get_goal_seal_hint().contains("踏足"), "legacy seal hint names POI visits")
+	for cell_id in saved_landmarks:
+		map.get_cell(cell_id).landmark_id = saved_landmarks[cell_id]
+	_check(EventManager.has_checkpoint_landmarks(), "landmarks restore after the fallback probe")
+
+	var shop_cells := map.landmark_cells_of_type("shop")
+	_check(shop_cells.size() == 1, "landmark test map has one shop")
+	if not shop_cells.is_empty():
+		var shop_id: int = shop_cells[0]
+		EventManager.finish_event()
+		EventManager._previous_terrain = map.terrain_of(shop_id)
+		var shop_started := EventManager.on_cell_entered(shop_id)
+		_check(shop_started and EventManager.active_event_id == "traveling_shop", "entering the shop starts its fixed event")
+		_check(EventManager.active_trigger == "facility", "shop event uses the facility trigger")
+		var trade_choice := ""
+		for raw_choice in EventManager.get_choices():
+			var choice: Dictionary = raw_choice
+			if String(choice.get("id", "")) == "trade":
+				trade_choice = "trade"
+		_check(not trade_choice.is_empty(), "shop exposes trade and leave")
+		if not trade_choice.is_empty():
+			player.gold = 50
+			player.add_item("pelt", 1)
+			var gold_before := player.gold
+			var pelt_before := player.item_count("pelt")
+			var menu := EventManager.choose_choice(trade_choice)
+			_check(String(menu.get("kind", "")) == "trade_menu", "shop trade opens the offer menu")
+			var offers: Array = menu.get("offers", [])
+			var sell_index := -1
+			var buy_index := -1
+			for i in range(offers.size()):
+				var offer: Dictionary = offers[i]
+				if String(offer.get("item_id", "")) == "pelt" and String(offer.get("type", "")) == "sell":
+					sell_index = i
+				if String(offer.get("item_id", "")) == "supply" and String(offer.get("type", "")) == "buy":
+					buy_index = i
+			_check(sell_index >= 0, "shop lists pelt as a sellable item")
+			_check(buy_index >= 0, "shop lists supply as a purchasable item")
+			if sell_index >= 0:
+				var sold := EventManager.resolve_trade_offer(sell_index)
+				_check(String(sold.get("kind", "")) == "outcome", "selling resolves the trade")
+				_check(player.gold == gold_before + 6, "selling a pelt pays six gold")
+				_check(player.item_count("pelt") == pelt_before - 1, "selling removes exactly one pelt")
+		EventManager.finish_event()
+
+	var inn_cells := map.landmark_cells_of_type("inn")
+	_check(inn_cells.size() == 1, "landmark test map has one inn")
+	if not inn_cells.is_empty():
+		var inn_id: int = inn_cells[0]
+		EventManager.finish_event()
+		EventManager._previous_terrain = map.terrain_of(inn_id)
+		var inn_started := EventManager.on_cell_entered(inn_id)
+		_check(inn_started and EventManager.active_event_id == "roadside_inn", "entering the inn starts its fixed event")
+		# 首次踏足的先民发现奖励可能改变金币，因此进店后再设置测试用资源。
+		player.gold = 20
+		player.hp = maxi(1, player.hp_max - 2)
+		player.ap_max_deci = maxi(player.ap_max_deci, 40)
+		player.ap_deci = 10
+		var hp_before := player.hp
+		var ap_before := player.ap_deci
+		var rest_choice := ""
+		for raw_choice in EventManager.get_choices():
+			var choice: Dictionary = raw_choice
+			if String(choice.get("id", "")) == "rest":
+				rest_choice = "rest"
+		_check(not rest_choice.is_empty(), "inn exposes the rest choice")
+		if not rest_choice.is_empty():
+			var rested := EventManager.choose_choice(rest_choice)
+			_check(String(rested.get("kind", "")) == "outcome", "inn rest resolves without a check")
+			_check(player.gold == 12, "inn rest costs eight gold")
+			_check(player.hp == mini(player.hp_max, hp_before + 3), "inn rest heals up to three HP")
+			_check(player.ap_deci == mini(player.ap_max_deci, ap_before + 20), "inn rest restores two AP")
+		EventManager.finish_event()
+
+
 func _test_game_scene() -> void:
 	print("-- game scene --")
 	var configs := MapConfigLoader.list_configs()
@@ -1400,29 +1533,93 @@ func _test_game_scene() -> void:
 		var hover_label: Label = hud.get_node_or_null("HoverChip/Margin/HoverLabel")
 		_check(hover_label != null, "HUD shows terrain state while hovering")
 		if hover_label != null and map_view != null and GameManager.player != null:
-			var hover_id := GameManager.player.cell_id
-			map_view._update_hover(GameManager.map.cell_center(hover_id))
-			_check(hover_label.text.find("海拔") >= 0 and hover_label.text.find("格内") >= 0, "HUD shows local elevation and within-cell range")
-			var hover_cell := GameManager.map.get_cell(hover_id)
-			var low_index := 0
-			var high_index := 0
-			for i in range(hover_cell.elevation_samples.size()):
-				if hover_cell.elevation_samples[i] < hover_cell.elevation_samples[low_index]:
-					low_index = i
-				if hover_cell.elevation_samples[i] > hover_cell.elevation_samples[high_index]:
-					high_index = i
-			map_view._update_hover(hover_cell.center.lerp(hover_cell.relief_polygon[low_index], 0.75))
-			var low_text: String = hover_label.text
-			map_view._update_hover(hover_cell.center.lerp(hover_cell.relief_polygon[high_index], 0.75))
-			_check(low_text != hover_label.text, "HUD local elevation updates while moving inside one cell")
+			var hover_map := GameManager.map
+			var marker_points: Array[Vector2] = []
+			for marker_id in hover_map.poi_ids:
+				marker_points.append(hover_map.cell_center(marker_id))
+			marker_points.append(hover_map.cell_center(hover_map.start_id))
+			marker_points.append(hover_map.cell_center(hover_map.goal_id))
+			# 选择没有固定标记的地块，避免光标落在起点/POI 小点上时优先显示标记信息。
+			var hover_id := -1
+			var low_point := Vector2.ZERO
+			var high_point := Vector2.ZERO
+			for cell in hover_map.cells:
+				if cell.id == hover_map.start_id or cell.id == hover_map.goal_id or not cell.poi_id.is_empty():
+					continue
+				if hover_map.fog_state(cell.id) == MapData.FogState.UNKNOWN:
+					continue
+				if cell.elevation_samples.size() < 3:
+					continue
+				var elev_range := hover_map.elevation_range_of(cell.id)
+				if elev_range.y - elev_range.x < 0.15:
+					continue
+				var low_index := 0
+				var high_index := 0
+				for i in range(cell.elevation_samples.size()):
+					if cell.elevation_samples[i] < cell.elevation_samples[low_index]:
+						low_index = i
+					if cell.elevation_samples[i] > cell.elevation_samples[high_index]:
+						high_index = i
+				var candidate_low := cell.center.lerp(cell.relief_polygon[low_index], 0.75)
+				var candidate_high := cell.center.lerp(cell.relief_polygon[high_index], 0.75)
+				if not _point_clear_of_markers(candidate_low, marker_points, 28.0):
+					continue
+				if not _point_clear_of_markers(candidate_high, marker_points, 28.0):
+					continue
+				hover_id = cell.id
+				low_point = candidate_low
+				high_point = candidate_high
+				break
+			_check(hover_id >= 0, "map has a marker-free cell for elevation hover")
+			if hover_id >= 0:
+				map_view._update_hover(low_point)
+				_check(hover_label.text.find("海拔") >= 0 and hover_label.text.find("格内") >= 0, "HUD shows local elevation and within-cell range")
+				var low_text: String = hover_label.text
+				map_view._update_hover(high_point)
+				_check(low_text != hover_label.text, "HUD local elevation updates while moving inside one cell")
+			# 所有非玩家/同伴标记都能悬停：起点、终点、检查点、商店、旅店。
+			map_view._update_hover(hover_map.cell_center(hover_map.start_id))
+			_check("起点" in hover_label.text, "hovering the start marker shows its info")
+			map_view._update_hover(hover_map.cell_center(hover_map.goal_id))
+			_check("终点" in hover_label.text and "封印" in hover_label.text, "hovering the goal marker shows seal progress")
+			for checkpoint_id in hover_map.landmark_cells_of_type("checkpoint"):
+				map_view._update_hover(hover_map.cell_center(checkpoint_id))
+				if "检查点" in hover_label.text:
+					break
+			_check("检查点" in hover_label.text, "hovering a checkpoint marker shows seal info")
+			var shop_cells_for_hover := hover_map.landmark_cells_of_type("shop")
+			if not shop_cells_for_hover.is_empty():
+				map_view._update_hover(hover_map.cell_center(shop_cells_for_hover[0]))
+				_check("商店" in hover_label.text and "买" in hover_label.text, "hovering the shop marker shows trade info")
+			var inn_cells_for_hover := hover_map.landmark_cells_of_type("inn")
+			if not inn_cells_for_hover.is_empty():
+				map_view._update_hover(hover_map.cell_center(inn_cells_for_hover[0]))
+				_check("旅店" in hover_label.text and "休息" in hover_label.text, "hovering the inn marker shows rest info")
+			# 普通 POI 也要能悬停；先把它标成已知，再像玩家侦察后那样读取信息。
+			var generic_poi := -1
+			for poi_id in hover_map.poi_ids:
+				var generic_cell := hover_map.get_cell(poi_id)
+				if generic_cell != null and generic_cell.landmark_id.is_empty():
+					generic_poi = poi_id
+					break
+			if generic_poi >= 0:
+				hover_map.mark_poi_known(generic_poi)
+				var known_cell := hover_map.get_cell(generic_poi)
+				if known_cell != null:
+					known_cell.seen = true
+				map_view._update_hover(hover_map.cell_center(generic_poi))
+				_check("地点" in hover_label.text and "首次踏足" in hover_label.text, "hovering a known ordinary POI shows location info")
 			var unknown_id := -1
-			for cell in GameManager.map.cells:
-				if not GameManager.map.cell_intersects_vision(cell.id) \
-						and GameManager.map.fog_state(cell.id) == MapData.FogState.UNKNOWN:
+			for cell in hover_map.cells:
+				if not hover_map.cell_intersects_vision(cell.id) \
+						and hover_map.fog_state(cell.id) == MapData.FogState.UNKNOWN \
+						and cell.landmark_id.is_empty() \
+						and cell.id != hover_map.start_id and cell.id != hover_map.goal_id \
+						and _point_clear_of_markers(cell.center, marker_points, 28.0):
 					unknown_id = cell.id
 					break
 			if unknown_id >= 0:
-				map_view._update_hover(GameManager.map.cell_center(unknown_id))
+				map_view._update_hover(hover_map.cell_center(unknown_id))
 				_check("未知" in hover_label.text, "HUD hides terrain under unknown fog")
 				_check(hover_label.text.find("海拔") < 0 or hover_label.text.find("—") >= 0, "HUD hides elevation under unknown fog")
 		var hover_chip: Control = hud.get_node_or_null("HoverChip")
@@ -3290,6 +3487,13 @@ func _goal_approach_route(map: MapData) -> Dictionary:
 		"start": map.cell_center(fallback),
 		"end": goal_center,
 	}
+
+
+func _point_clear_of_markers(point: Vector2, markers: Array[Vector2], min_distance: float) -> bool:
+	for marker in markers:
+		if point.distance_to(marker) < min_distance:
+			return false
+	return true
 
 
 func _start_game(character_id: String, config: Dictionary = {}) -> bool:

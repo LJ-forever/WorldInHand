@@ -10,11 +10,12 @@ const DATA_FILES := {
 	"terrains": "res://data/terrains.json",
 	"hidden_tasks": "res://data/hidden_tasks.json",
 	"events": "res://data/events/events.json",
+	"landmarks": "res://data/landmarks.json",
 }
 
 const ATTRIBUTES := ["speed", "stamina", "perception", "luck", "combat", "negotiation"]
-const EVENT_TRIGGERS := ["poi", "enter_region", "wander", "goal"]
-const EVENT_RESOLUTIONS := ["check", "trade", "steal", "item_sacrifice", "heal_choice"]
+const EVENT_TRIGGERS := ["poi", "enter_region", "wander", "goal", "facility"]
+const EVENT_RESOLUTIONS := ["check", "trade", "steal", "item_sacrifice", "heal_choice", "inn"]
 const EVENT_EFFECT_TYPES := [
 	"hp", "hp_relief", "ap", "gold", "item_gain", "item_lose",
 	"status_add", "status_remove", "flag_add", "flag_remove", "reveal",
@@ -149,6 +150,82 @@ func _validate_references() -> void:
 			_scan_effects(choice.get("outcomes", {}), "事件 %s/%s" % [event_id, choice_id])
 			_scan_effects(choice.get("params", {}), "事件 %s/%s" % [event_id, choice_id])
 			_validate_outcome_effects(choice.get("outcomes", {}), "事件 %s/%s" % [event_id, choice_id])
+			if resolution == "trade":
+				_validate_trade_offers(choice, "事件 %s/%s" % [event_id, choice_id])
+			elif resolution == "inn":
+				_validate_inn_params(choice, "事件 %s/%s" % [event_id, choice_id])
+	_validate_landmarks()
+
+
+## 地标表只描述地图上的固定设施；设施事件必须是 facility 触发器，
+## 检查点则只负责封印进度，二者不能混在同一条地标记录里。
+func _validate_landmarks() -> void:
+	var landmarks := table("landmarks")
+	for landmark_id in landmarks.keys():
+		var landmark: Dictionary = landmarks[landmark_id]
+		var color_text := String(landmark.get("color", ""))
+		if not color_text.is_empty() and not Color.html_is_valid(color_text):
+			load_errors.append("地标 %s：color 不是合法颜色 %s" % [landmark_id, color_text])
+		var facility_event_id := String(landmark.get("facility_event_id", ""))
+		if not facility_event_id.is_empty():
+			if not has_record("events", facility_event_id):
+				load_errors.append("地标 %s：引用了不存在的事件 %s" % [landmark_id, facility_event_id])
+			elif String(get_record("events", facility_event_id).get("trigger", "")) != "facility":
+				load_errors.append("地标 %s：设施事件 %s 的 trigger 必须是 facility" % [landmark_id, facility_event_id])
+		if bool(landmark.get("counts_for_seal", false)) and not facility_event_id.is_empty():
+			load_errors.append("地标 %s：不能同时计入封印和提供设施事件" % landmark_id)
+		if String(landmark.get("short_name", "")).strip_edges().is_empty():
+			load_errors.append("地标 %s：缺少 short_name" % landmark_id)
+
+
+## 交易选项支持 buy / barter / sell；出售只接受数据表标记为 tradable 的物品。
+func _validate_trade_offers(choice: Dictionary, context: String) -> void:
+	var params = choice.get("params", {})
+	if typeof(params) != TYPE_DICTIONARY:
+		load_errors.append("%s：trade.params 必须是对象" % context)
+		return
+	var offers = params.get("offers", [])
+	if typeof(offers) != TYPE_ARRAY:
+		load_errors.append("%s：trade.params.offers 必须是数组" % context)
+		return
+	for offer in offers:
+		if typeof(offer) != TYPE_DICTIONARY:
+			load_errors.append("%s：交易条目必须是对象" % context)
+			continue
+		var kind := String(offer.get("type", ""))
+		match kind:
+			"buy":
+				_require("items", offer.get("item_id", ""), context)
+				if int(offer.get("price", 0)) < 0:
+					load_errors.append("%s：购买价格不能为负" % context)
+			"sell":
+				var item_id := String(offer.get("item_id", ""))
+				_require("items", item_id, context)
+				if int(offer.get("price", 0)) < 0:
+					load_errors.append("%s：出售价格不能为负" % context)
+				if has_record("items", item_id) and not bool(get_record("items", item_id).get("tradable", false)):
+					load_errors.append("%s：%s 不可交易，不能作为出售项" % [context, item_id])
+			"barter":
+				var give: Dictionary = offer.get("give", {})
+				var receive: Dictionary = offer.get("receive", {})
+				_require("items", give.get("item_id", ""), context)
+				_require("items", receive.get("item_id", ""), context)
+			_:
+				load_errors.append("%s：未知交易类型 %s" % [context, kind])
+
+
+func _validate_inn_params(choice: Dictionary, context: String) -> void:
+	var params = choice.get("params", {})
+	if typeof(params) != TYPE_DICTIONARY:
+		load_errors.append("%s：inn.params 必须是对象" % context)
+		return
+	var gold_cost := int(params.get("gold_cost", 0))
+	var heal_hp := int(params.get("heal_hp", 0))
+	var restore_ap := int(params.get("restore_ap", 0))
+	if gold_cost < 0 or heal_hp < 0 or restore_ap < 0:
+		load_errors.append("%s：旅店费用与恢复量不能为负" % context)
+	if gold_cost == 0 and heal_hp == 0 and restore_ap == 0:
+		load_errors.append("%s：旅店没有任何费用或恢复效果" % context)
 
 
 func _validate_outcome_effects(outcomes: Dictionary, context: String) -> void:
