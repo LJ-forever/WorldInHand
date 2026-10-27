@@ -14,8 +14,8 @@ const DATA_FILES := {
 }
 
 const ATTRIBUTES := ["speed", "stamina", "perception", "luck", "combat", "negotiation"]
-const EVENT_TRIGGERS := ["poi", "enter_region", "wander", "goal", "facility"]
-const EVENT_RESOLUTIONS := ["check", "trade", "steal", "item_sacrifice", "heal_choice", "inn"]
+const EVENT_TRIGGERS := ["poi", "enter_region", "wander", "goal", "facility", "checkpoint"]
+const EVENT_RESOLUTIONS := ["check", "trade", "steal", "item_sacrifice", "heal_choice", "inn", "checkpoint"]
 const EVENT_EFFECT_TYPES := [
 	"hp", "hp_relief", "ap", "gold", "item_gain", "item_lose",
 	"status_add", "status_remove", "flag_add", "flag_remove", "reveal",
@@ -154,11 +154,13 @@ func _validate_references() -> void:
 				_validate_trade_offers(choice, "事件 %s/%s" % [event_id, choice_id])
 			elif resolution == "inn":
 				_validate_inn_params(choice, "事件 %s/%s" % [event_id, choice_id])
+			elif resolution == "checkpoint":
+				_validate_checkpoint_params(choice, "事件 %s/%s" % [event_id, choice_id])
 	_validate_landmarks()
 
 
 ## 地标表只描述地图上的固定设施；设施事件必须是 facility 触发器，
-## 检查点则只负责封印进度，二者不能混在同一条地标记录里。
+## 检查点仪式必须是 checkpoint 触发器，二者不能混在同一条地标记录里。
 func _validate_landmarks() -> void:
 	var landmarks := table("landmarks")
 	for landmark_id in landmarks.keys():
@@ -172,10 +174,32 @@ func _validate_landmarks() -> void:
 				load_errors.append("地标 %s：引用了不存在的事件 %s" % [landmark_id, facility_event_id])
 			elif String(get_record("events", facility_event_id).get("trigger", "")) != "facility":
 				load_errors.append("地标 %s：设施事件 %s 的 trigger 必须是 facility" % [landmark_id, facility_event_id])
+		var checkpoint_event_id := String(landmark.get("checkpoint_event_id", ""))
+		if not checkpoint_event_id.is_empty():
+			if not bool(landmark.get("counts_for_seal", false)):
+				load_errors.append("地标 %s：检查点仪式要求 counts_for_seal = true" % landmark_id)
+			if not has_record("events", checkpoint_event_id):
+				load_errors.append("地标 %s：引用了不存在的检查点事件 %s" % [landmark_id, checkpoint_event_id])
+			elif String(get_record("events", checkpoint_event_id).get("trigger", "")) != "checkpoint":
+				load_errors.append("地标 %s：检查点事件 %s 的 trigger 必须是 checkpoint" % [landmark_id, checkpoint_event_id])
 		if bool(landmark.get("counts_for_seal", false)) and not facility_event_id.is_empty():
 			load_errors.append("地标 %s：不能同时计入封印和提供设施事件" % landmark_id)
+		if not facility_event_id.is_empty() and not checkpoint_event_id.is_empty():
+			load_errors.append("地标 %s：不能同时提供设施事件与检查点仪式" % landmark_id)
 		if String(landmark.get("short_name", "")).strip_edges().is_empty():
 			load_errors.append("地标 %s：缺少 short_name" % landmark_id)
+
+
+## 检查点仪式至少要有稳定的 path / path_name，才能跨存档汇总结局。
+func _validate_checkpoint_params(choice: Dictionary, context: String) -> void:
+	var params = choice.get("params", {})
+	if typeof(params) != TYPE_DICTIONARY:
+		load_errors.append("%s：checkpoint.params 必须是对象" % context)
+		return
+	if String(params.get("path", "")).strip_edges().is_empty():
+		load_errors.append("%s：checkpoint.params 缺少 path" % context)
+	if String(params.get("path_name", "")).strip_edges().is_empty():
+		load_errors.append("%s：checkpoint.params 缺少 path_name" % context)
 
 
 ## 交易选项支持 buy / barter / sell；出售只接受数据表标记为 tradable 的物品。

@@ -1922,6 +1922,12 @@ func build_run_summary_text(win: bool = false) -> String:
 	lines.append("金币 %d · 行囊 %d 件 · 装备：%s" % [
 		player.gold, player.inventory.size(), player.equipment_text(),
 	])
+	var checkpoint_summary := EventManager.get_checkpoint_path_summary().strip_edges()
+	if not checkpoint_summary.is_empty():
+		lines.append(checkpoint_summary)
+	var resonance_text := EventManager.get_checkpoint_resonance_text().strip_edges()
+	if not resonance_text.is_empty():
+		lines.append("最终共鸣：%s" % resonance_text)
 	if companion != null:
 		var relation := companion_relation_text() if companion.alive else "已经倒下"
 		lines.append("同伴：%s · %s" % [companion_name(), relation])

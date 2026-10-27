@@ -4,7 +4,7 @@
   "description": "每次进入都会重新生成地块形状、生态分布、海拔与 POI。",
   "randomize_seed": true,
   "character_ids": ["lin_xiao", "sha_kai", "wei_la", "ying", "qing_heng"],
-  "event_ids": ["caravan", "bandit_ambush", "herb_patch", "goal_guard", "wildfire", "sandstorm", "old_well", "lost", "abandoned_camp", "wanderer", "cliff", "ancient_stele", "fallen_tree", "mirage", "pilgrim", "traveling_shop", "roadside_inn"],
+  "event_ids": ["caravan", "bandit_ambush", "herb_patch", "goal_guard", "wildfire", "sandstorm", "old_well", "lost", "abandoned_camp", "wanderer", "cliff", "ancient_stele", "fallen_tree", "mirage", "pilgrim", "checkpoint_ritual", "traveling_shop", "roadside_inn"],
   "seed": 20261023,
   "cell_count": 400,
   "poi_count": 10,

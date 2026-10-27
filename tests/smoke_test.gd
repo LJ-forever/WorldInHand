@@ -663,7 +663,7 @@ func _test_event_system() -> void:
 		"caravan", "bandit_ambush", "herb_patch", "goal_guard",
 		"wildfire", "sandstorm", "old_well", "lost",
 		"abandoned_camp", "wanderer", "cliff", "ancient_stele",
-		"fallen_tree", "mirage", "pilgrim", "traveling_shop", "roadside_inn",
+		"fallen_tree", "mirage", "pilgrim", "checkpoint_ritual", "traveling_shop", "roadside_inn",
 	]
 	var loaded_ids: Array[String] = []
 	var invalid_events := 0
@@ -1023,10 +1023,14 @@ func _test_event_system() -> void:
 	var poi_cell_id := -1
 	for raw_poi_id in GameManager.map.poi_ids:
 		var candidate_poi := int(raw_poi_id)
-		if candidate_poi != GameManager.map.goal_id:
-			poi_cell_id = candidate_poi
-			break
-	_check(poi_cell_id >= 0, "map has a non-goal POI for discovery rewards")
+		var candidate_cell := GameManager.map.get_cell(candidate_poi)
+		if candidate_poi == GameManager.map.goal_id:
+			continue
+		if candidate_cell != null and not candidate_cell.landmark_id.is_empty():
+			continue
+		poi_cell_id = candidate_poi
+		break
+	_check(poi_cell_id >= 0, "map has a non-goal ordinary POI for discovery rewards")
 	if poi_cell_id >= 0:
 		var supply_before_poi := player.item_count("supply")
 		var potion_before_poi := player.item_count("potion")
@@ -1151,11 +1155,66 @@ func _test_landmarks_and_facilities() -> void:
 	for checkpoint_id in checkpoints:
 		EventManager._previous_terrain = map.terrain_of(checkpoint_id)
 		var started := EventManager.on_cell_entered(checkpoint_id)
-		_check(not started and not EventManager.is_event_active(), "checkpoint entry does not start a random event")
+		_check(started and EventManager.active_event_id == "checkpoint_ritual", "entering a checkpoint starts the ritual")
+		_check(EventManager.active_trigger == "checkpoint", "checkpoint ritual uses the checkpoint trigger")
+		var choice_ids: Array[String] = []
+		for raw_choice in EventManager.get_choices():
+			var choice: Dictionary = raw_choice
+			choice_ids.append(String(choice.get("id", "")))
+		_check(
+			choice_ids.has("lore") and choice_ids.has("ward") and choice_ids.has("blood") and choice_ids.has("leave"),
+			"checkpoint offers lore, ward, blood and leave choices"
+		)
+		var leave_result := EventManager.choose_choice("leave")
+		_check(String(leave_result.get("kind", "")) == "outcome", "leaving the checkpoint resolves without activation")
+		_check(EventManager.get_goal_seal_progress() == checkpoint_entered, "leaving does not advance the seal")
+		_check(not EventManager.is_poi_visited(map.get_cell(checkpoint_id).poi_id), "leaving keeps the checkpoint unactivated")
+		EventManager.finish_event()
+
+		# 重新进入后完成知誓仪式；三次都选知誓，验证最终共鸣。
+		EventManager._previous_terrain = map.terrain_of(checkpoint_id)
+		var reentered := EventManager.on_cell_entered(checkpoint_id)
+		_check(reentered and EventManager.active_event_id == "checkpoint_ritual", "an unactivated checkpoint can be entered again")
+		var gold_before := player.gold
+		var activated := EventManager.choose_choice("lore")
+		_check(String(activated.get("level_name", "")) == "检查点", "checkpoint activation renders a checkpoint outcome")
 		checkpoint_entered += 1
-		_check(EventManager.get_goal_seal_progress() == checkpoint_entered, "each checkpoint advances the seal")
+		_check(EventManager.get_goal_seal_progress() == checkpoint_entered, "each completed ritual advances the seal")
+		_check(EventManager.is_poi_visited(map.get_cell(checkpoint_id).poi_id), "completed ritual marks the checkpoint visited")
+		_check(not EventManager.checkpoint_path_of(map.get_cell(checkpoint_id).poi_id).is_empty(), "checkpoint choice is recorded")
+		if checkpoint_entered < checkpoints.size():
+			_check(player.gold == gold_before + 8, "lore choice grants eight gold before resonance")
+		else:
+			_check(player.gold == gold_before + 8 + 15, "all-lore resonance adds fifteen gold on the final checkpoint")
+		EventManager.finish_event()
 	_check(EventManager.is_goal_seal_open(), "all checkpoints open the goal seal")
 	_check(EventManager.get_goal_seal_text().contains("已解"), "seal text reports an open seal")
+	_check(EventManager.get_checkpoint_path_summary().contains("知誓 ×3"), "summary counts three lore choices")
+	_check(EventManager.get_checkpoint_resonance_id() == "lore", "all-lore choices produce the lore resonance")
+	_check(EventManager.get_checkpoint_resonance_text().contains("知誓共鸣"), "lore resonance text is available to the ending")
+
+	# 其余组合的最终共鸣：全守誓 / 全血契 / 混合。直接构造路径状态，避免重跑整局。
+	var path_names := {"lore": "知誓", "ward": "守誓", "blood": "血契"}
+	for scenario in [
+		{"paths": ["ward", "ward", "ward"], "id": "ward", "text": "守誓共鸣"},
+		{"paths": ["blood", "blood", "blood"], "id": "blood", "text": "血契共鸣"},
+		{"paths": ["lore", "ward", "blood"], "id": "mixed", "text": "残响"},
+	]:
+		for i in range(checkpoints.size()):
+			var checkpoint_cell := map.get_cell(checkpoints[i])
+			var scenario_path := String(scenario["paths"][i])
+			EventManager._checkpoint_paths[checkpoint_cell.poi_id] = {
+				"path": scenario_path,
+				"name": String(path_names[scenario_path]),
+			}
+		EventManager._checkpoint_resonance = ""
+		EventManager._checkpoint_resonance_text = ""
+		var echo_applied := {
+			"messages": [], "rewards": [], "costs": [], "insights": [], "death": false,
+		}
+		EventManager._resolve_checkpoint_resonance(echo_applied)
+		_check(EventManager.get_checkpoint_resonance_id() == String(scenario["id"]), "checkpoint combination resolves to %s" % String(scenario["id"]))
+		_check(EventManager.get_checkpoint_resonance_text().contains(String(scenario["text"])), "%s resonance text is generated" % String(scenario["id"]))
 
 	# 没有地标的旧地图/旧存档仍然回退到“任意 3 处 POI”。
 	var saved_landmarks := {}
@@ -1191,6 +1250,7 @@ func _test_landmarks_and_facilities() -> void:
 			var pelt_before := player.item_count("pelt")
 			var menu := EventManager.choose_choice(trade_choice)
 			_check(String(menu.get("kind", "")) == "trade_menu", "shop trade opens the offer menu")
+			_check(String(menu.get("title", "")).contains("交易页"), "shop trade menu is presented as its own page")
 			var offers: Array = menu.get("offers", [])
 			var sell_index := -1
 			var buy_index := -1
@@ -1586,15 +1646,18 @@ func _test_game_scene() -> void:
 				map_view._update_hover(hover_map.cell_center(checkpoint_id))
 				if "检查点" in hover_label.text:
 					break
-			_check("检查点" in hover_label.text, "hovering a checkpoint marker shows seal info")
+			_check("检查点" in hover_label.text and "进入后触发封印仪式" in hover_label.text, "checkpoint hover shows only basic ritual info")
+			_check("买" not in hover_label.text and "卖" not in hover_label.text and "金币" not in hover_label.text, "checkpoint hover hides shop details")
 			var shop_cells_for_hover := hover_map.landmark_cells_of_type("shop")
 			if not shop_cells_for_hover.is_empty():
 				map_view._update_hover(hover_map.cell_center(shop_cells_for_hover[0]))
-				_check("商店" in hover_label.text and "买" in hover_label.text, "hovering the shop marker shows trade info")
+				_check("商店" in hover_label.text and "交易页" in hover_label.text, "shop hover points to the trade page")
+				_check("买" not in hover_label.text and "卖" not in hover_label.text and "金币" not in hover_label.text, "shop hover hides prices and offers")
 			var inn_cells_for_hover := hover_map.landmark_cells_of_type("inn")
 			if not inn_cells_for_hover.is_empty():
 				map_view._update_hover(hover_map.cell_center(inn_cells_for_hover[0]))
-				_check("旅店" in hover_label.text and "休息" in hover_label.text, "hovering the inn marker shows rest info")
+				_check("旅店" in hover_label.text and "休息页" in hover_label.text, "inn hover points to the rest page")
+				_check("金币" not in hover_label.text and "HP" not in hover_label.text and "AP" not in hover_label.text, "inn hover hides cost and recovery values")
 			# 普通 POI 也要能悬停；先把它标成已知，再像玩家侦察后那样读取信息。
 			var generic_poi := -1
 			for poi_id in hover_map.poi_ids:
@@ -1608,7 +1671,7 @@ func _test_game_scene() -> void:
 				if known_cell != null:
 					known_cell.seen = true
 				map_view._update_hover(hover_map.cell_center(generic_poi))
-				_check("地点" in hover_label.text and "首次踏足" in hover_label.text, "hovering a known ordinary POI shows location info")
+				_check("地点" in hover_label.text and "首次踏足" not in hover_label.text, "ordinary POI hover only shows basic location info")
 			var unknown_id := -1
 			for cell in hover_map.cells:
 				if not hover_map.cell_intersects_vision(cell.id) \
@@ -3169,6 +3232,10 @@ func _test_save_load() -> void:
 	EventManager._random_events_this_run = 17
 	EventManager._reveal_level = 2
 	EventManager._visited_pois["probe_poi"] = true
+	EventManager._discovered_pois["probe_poi"] = true
+	EventManager._checkpoint_paths["probe_poi"] = {"path": "lore", "name": "知誓"}
+	EventManager._checkpoint_resonance = "lore"
+	EventManager._checkpoint_resonance_text = "知誓共鸣：存档测试。"
 	EventManager._visited_regions[2] = true
 	EventManager._revealed_pois[3] = true
 	EventManager._recent_event_ids.clear()
@@ -3290,6 +3357,10 @@ func _test_save_load() -> void:
 	_check(int(EventManager._random_events_this_run) == 17, "per-run random event count restored")
 	_check(EventManager.get_reveal_level() == 2, "AI reveal level restored")
 	_check(EventManager._visited_pois.has("probe_poi"), "visited POIs restored")
+	_check(EventManager._discovered_pois.has("probe_poi"), "discovered POIs restored")
+	_check(EventManager.get_checkpoint_resonance_id() == "lore", "checkpoint resonance id restored")
+	_check(EventManager.get_checkpoint_resonance_text().contains("存档测试"), "checkpoint resonance text restored")
+	_check(String(EventManager.checkpoint_path_of("probe_poi").get("name", "")) == "知誓", "checkpoint choice restored")
 	_check(EventManager._visited_regions.has(2), "visited regions restored")
 	_check(EventManager._revealed_pois.has(3), "revealed POIs restored")
 	_check(RNGManager.get_stream("event").randi() == expected_event_roll, "event RNG stream continues from the save point")

@@ -1,6 +1,6 @@
-# 数据 Schema（v1.10）
+# 数据 Schema（v1.11）
 
-所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.10 新增第 8 张内容表 `landmarks.json`（检查点 / 商店 / 旅店），地图配置新增 `landmark_counts`；事件 DSL 的 `trigger` 新增 `facility`，`resolution` 新增 `inn`，交易列表新增 `sell`；固定设施事件由进入地标格直接触发，不占随机事件预算。终点封印改为「激活全部检查点」，无检查点的旧地图回退为「踏足 3 处 POI」。`game_version` 升到 `1.10`，`save_version` 仍为 1；地标位置由地图配置与种子确定性重建，不写入存档。v1.9 无新增/改名内容 JSON 字段，但新增效果类型 `goal_guard_suppress`（退开守卫），运行时与存档新增 `goal_guard_suppressed_round` / `goal_fail_streak` / `goal_withdraw_count` / `theft_warning_given`，`game_version` 升到 `1.9`、`save_version` 仍为 1；青蘅 `negotiation` 3 → 4；`goal_guard` 的 `sacrifice_item` 由自动通过改为消耗物品 + 交涉 DC 13（稀有度 +1/+2/+3），`withdraw` 增加每局 2 次上限与本回合压制。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
+所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.11 把检查点从「踏足即激活」改为固定触发事件：`landmarks.json` 新增 `checkpoint_event_id`，事件 DSL 的 `trigger` 与 `resolution` 均新增 `checkpoint`，选项用 `params.path` / `params.path_name` 记录誓约；集齐全部检查点后按所选誓约给出不同最终共鸣。地标悬停只保留名称、距离与激活状态，商店/旅店/检查点的完整内容改在进入后的全屏子页面中展示。`save_version` 仍为 1，存档新增 `discovered_pois` / `checkpoint_paths` / `checkpoint_resonance` / `checkpoint_resonance_text`，`game_version` 升到 `1.11`。v1.10 新增第 8 张内容表 `landmarks.json`（检查点 / 商店 / 旅店），地图配置新增 `landmark_counts`；事件 DSL 的 `trigger` 新增 `facility`，`resolution` 新增 `inn`，交易列表新增 `sell`；固定设施事件由进入地标格直接触发，不占随机事件预算。终点封印改为「激活全部检查点」，无检查点的旧地图回退为「踏足 3 处 POI」。`game_version` 升到 `1.10`，`save_version` 仍为 1；地标位置由地图配置与种子确定性重建，不写入存档。v1.9 无新增/改名内容 JSON 字段，但新增效果类型 `goal_guard_suppress`（退开守卫），运行时与存档新增 `goal_guard_suppressed_round` / `goal_fail_streak` / `goal_withdraw_count` / `theft_warning_given`，`game_version` 升到 `1.9`、`save_version` 仍为 1；青蘅 `negotiation` 3 → 4；`goal_guard` 的 `sacrifice_item` 由自动通过改为消耗物品 + 交涉 DC 13（稀有度 +1/+2/+3），`withdraw` 增加每局 2 次上限与本回合压制。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
 
 ## 0. 通用约定
 
@@ -28,11 +28,11 @@
 | `flags.json` | `flags` | 5 | v0.1 |
 | `terrains.json` | `terrains` | 11 | v0.1 |
 | `hidden_tasks.json` | `hidden_tasks` | 15（MVP 10） | v0.1 |
-| `events/events.json` | `events` | 17 | v1.10 |
-| `landmarks.json` | `landmarks` | 3 | v1.10 |
-| `maps/*.json` | 无（单对象） | 1 内置 | v1.10 |
+| `events/events.json` | `events` | 18 | v1.11 |
+| `landmarks.json` | `landmarks` | 3 | v1.11 |
+| `maps/*.json` | 无（单对象） | 1 内置 | v1.11 |
 
-> `events.json` 现有 17 个事件：5 个 `enter_region`、4 个 `poi`、5 个 `wander`、1 个 `goal`、2 个 `facility`。其中 12 个来自设计文档，`fallen_tree` / `mirage` / `pilgrim` 是为大地图后“一次移动可遇多个事件”补充的 wander 事件；`traveling_shop` / `roadside_inn` 是 v1.10 的固定设施事件，只能由 `landmarks.json` 的 `facility_event_id` 在进入对应地标格时触发，`weight = 0`，不进入随机池。事件池的 20～30 指单局触发次数，不是唯一事件数。触发权重与条件见 §8.6；固定设施说明见 §12。
+> `events.json` 现有 18 个事件：5 个 `enter_region`、4 个 `poi`、5 个 `wander`、1 个 `goal`、2 个 `facility`、1 个 `checkpoint`。其中 12 个来自设计文档，`fallen_tree` / `mirage` / `pilgrim` 是为大地图后“一次移动可遇多个事件”补充的 wander 事件；`traveling_shop` / `roadside_inn` 是 v1.10 的固定设施事件，只能由 `landmarks.json` 的 `facility_event_id` 在进入对应地标格时触发；`checkpoint_ritual` 是 v1.11 的检查点仪式，只能由 `checkpoint_event_id` 在未激活的检查点格触发。后三者均 `weight = 0`，不进入随机池。事件池的 20～30 指单局触发次数，不是唯一事件数。触发权重与条件见 §8.6；固定设施与检查点说明见 §12。
 
 ---
 
@@ -240,9 +240,9 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 
 | 字段 | 说明 |
 |---|---|
-| `trigger` | `poi` / `enter_region` / `wander` / `goal` / `facility` |
+| `trigger` | `poi` / `enter_region` / `wander` / `goal` / `facility` / `checkpoint` |
 | `terrains` | 地形 ID 数组；`["any"]` = 任意 |
-| `weight` | 基础权重（再乘地形/词条/装备/天气/阵营/冷却系数）；`facility` 事件固定为 0，不参与随机池 |
+| `weight` | 基础权重（再乘地形/词条/装备/天气/阵营/冷却系数）；`facility` / `checkpoint` 事件固定为 0，不参与随机池 |
 | `cooldown` | 冷却回合，MVP 固定 2 |
 | `per_character` | 是否每角色独立触发（终点守卫 = true） |
 | `text` | 事件描述 |
@@ -253,7 +253,7 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 | 字段 | 说明 |
 |---|---|
 | `check` | `{ "attr": "combat", "dc": 12 }` 或 `null`（无检定） |
-| `resolution` | 解析器：`check` / `trade` / `steal` / `item_sacrifice` / `heal_choice` / `inn` |
+| `resolution` | 解析器：`check` / `trade` / `steal` / `item_sacrifice` / `heal_choice` / `inn` / `checkpoint` |
 | `params` | 解析器参数 |
 | `auto_success_if_trait` | 拥有该词条时跳过检定，直接取 `success` 结果 |
 | `immune_if_trait` | 拥有该词条时完全免疫（如沙漠之子对沙尘暴） |
@@ -331,26 +331,28 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 | `item_sacrifice` | `allow_types[]`、`exclude_quest_items`、`consume_count`、`requires_any_item`、`rarity_bonus{common,uncommon,rare}`；先消耗 1 件物品，再做 `check` 指定的交涉检定，稀有度只提供加值 |
 | `heal_choice` | `options: ["hp","ap"]`、`ai_auto: "hp"` |
 | `inn` | `gold_cost`、`heal_hp`、`restore_ap`；结算时先检查金币是否足够、HP/AP 是否已满，付款后恢复并封顶。`gold_cost = 0` 且两项恢复都为 0 会被数据自检拒绝 |
+| `checkpoint` | `path`、`path_name`；仅在检查点格的仪式事件中使用。结算时把当前检查点 POI 标记为已激活、记录该处誓约并推进终点封印；`path` / `path_name` 必填，是最终共鸣的稳定判定键。同一检查点只能激活一次，重复进入不会重复计数 |
 
-复杂机制不塞进 JSON 表达式，一律走命名解析器；新增机制时先加解析器、再补数据。
+复杂机制不塞进 JSON 表达式，一律走命名解析器；新增机制时先加解析器、再补数据。检查点仪式的未激活选项可继续使用 `check`（内置的「不触碰石柱」），但它不会推进封印，也不记录誓约。
 
 ### 8.6 运行时触发与选择
 
 | 触发 | 运行时行为 |
 |---|---|
-| `poi` | 每个 `poi_id` 每局只在首次进入时触发一次，不再掷概率；从当前地形的事件池抽取。同一次首次踏足还会发放保底发现奖励（§8.9），奖励与“已访问”在同一步写入，读档不会重复领取。检查点格的首次踏足只发奖励与封印进度，不抽随机 POI 事件 |
+| `poi` | 每个 `poi_id` 每局只在首次进入时触发一次，不再掷概率；从当前地形的事件池抽取。同一次首次踏足还会发放保底发现奖励（§8.9），奖励写入独立的「已发现」集合，读档不会重复领取；普通 POI 同时标记为已访问。检查点格不抽随机 POI 事件，首次进入改为触发检查点仪式 |
 | `enter_region` | 开局按「同地形 + 邻接」生成连通区域；首次进入未访问区域的边界格时做 60% 判定，命中后触发一次 |
 | `wander` | 每累计消耗 30 deci-AP（3 AP）做一次 13% 判定，命中后清零；另外每回合开始时对玩家所在地形做一次 24% 环境判定，归入 `wander` 并重置累计 |
 | `goal` | 角色首次进入终点必触发；失败击退后可重复挑战，但只有首次计入单局事件数 |
 | `facility` | 进入带 `facility_event_id` 的地标格时直接触发，不掷概率；地标格若同时是 POI，会先发放首次踏足奖励。每次进入都可触发，设施事件不计入随机事件预算/上限，`priority = 3` |
+| `checkpoint` | 进入带 `checkpoint_event_id` 的地标格、且该检查点尚未激活时直接触发，不掷概率；地标格若同时是 POI，会先发放首次发现奖励。仪式选择未激活选项后可再次进入，激活后不再触发。不计入随机事件预算/上限，`priority = 3` |
 
 候选事件必须属于当前地图的 `event_ids`（字段省略时视为全量），且 `trigger` 匹配、地形匹配（`["any"]` 或包含当前地形）、`weight > 0` 且不在冷却。地形匹配事件权重 ×1.35。最近开始的 3 个事件会被记入防重复池；只要同池仍有其他候选，它们就不会被抽中。
 
-`goal` 强制触发且不受行动预算限制；`facility` 由地标格直接启动，同样不进入队列、不占随机事件名额。其他触发在一次移动行动中最多启动 2 个事件，两次启动之间至少累计消耗 3 AP；同一 `trigger` 在一次行动中最多 1 个，每回合最多 3 个随机事件。队列容量 2，优先级 `goal(4) > poi(3) = facility(3) > enter_region(2) > wander(1)`，新触发只在严格高于最低项时替换，否则丢弃并记日志。事件结束后按 `cooldown`（MVP 为 2；设施事件可写 0）进入全局冷却。
+`goal` 强制触发且不受行动预算限制；`facility` 与 `checkpoint` 由地标格直接启动，同样不进入队列、不占随机事件名额。其他触发在一次移动行动中最多启动 2 个事件，两次启动之间至少累计消耗 3 AP；同一 `trigger` 在一次行动中最多 1 个，每回合最多 3 个随机事件。队列容量 2，优先级 `goal(4) > poi(3) = facility(3) = checkpoint(3) > enter_region(2) > wander(1)`，新触发只在严格高于最低项时替换，否则丢弃并记日志。事件结束后按 `cooldown`（MVP 为 2；设施与检查点事件可写 0）进入全局冷却。
 
 单局随机事件上限为 29 个，终点守卫不计入且预留 1 个名额，因此含终点事件时单局不超过 30。上限按「已开始 + 已入队」的随机事件数计算；达到后新的 POI/区域/wander 触发直接忽略并写调试日志，终点守卫仍可入队。未等到触发时机的队列事件跨回合保留，不会因为换回合而丢掉走过的地点；队列容量仍为 2。该计数写入存档并在读档时恢复。50 局固定种子基线平均 24.5 个事件/局，详见 `docs/实现决策记录.md` D-64。
 
-`EventManager.random_events_enabled = false` 会关闭 POI/区域/wander 触发，但保留终点守卫；仅用于调试和自动化测试，不应写进内容数据。
+`EventManager.random_events_enabled = false` 会关闭 POI/区域/wander、固定设施与检查点仪式触发，但保留终点守卫；仅用于调试和自动化测试，不应写进内容数据。
 
 ### 8.7 情境权重（不写入 JSON）
 
@@ -411,7 +413,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
   "description": "每次进入都会重新生成地块形状、生态分布、海拔与 POI。",
   "randomize_seed": true,
   "character_ids": ["lin_xiao", "sha_kai", "wei_la", "ying", "qing_heng"],
-  "event_ids": ["caravan", "bandit_ambush", "herb_patch", "goal_guard", "wildfire", "sandstorm", "old_well", "lost", "abandoned_camp", "wanderer", "cliff", "ancient_stele", "fallen_tree", "mirage", "pilgrim", "traveling_shop", "roadside_inn"],
+  "event_ids": ["caravan", "bandit_ambush", "herb_patch", "goal_guard", "wildfire", "sandstorm", "old_well", "lost", "abandoned_camp", "wanderer", "cliff", "ancient_stele", "fallen_tree", "mirage", "pilgrim", "traveling_shop", "roadside_inn", "checkpoint_ritual"],
   "seed": 20261023,
   "cell_count": 400,
   "poi_count": 10,
@@ -436,7 +438,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 | `map_id` | 字符串 | 地图标识；建议全项目唯一 |
 | `name` / `description` | 字符串 | 地图选择界面的标题与说明 |
 | `character_ids` | 字符串数组 | 可选；本图可选角色，按数组顺序显示在角色选择界面，AI 对手也只从其中抽取。省略时回退为全量角色 |
-| `event_ids` | 字符串数组 | 可选；本图事件池。触发抽取只在这些事件中加权选择；终点守卫仍由代码强制触发，`facility` 事件只能由地标触发。省略时回退为全量事件 |
+| `event_ids` | 字符串数组 | 可选；本图事件池。触发抽取只在这些事件中加权选择；终点守卫仍由代码强制触发，`facility` / `checkpoint` 事件只能由地标触发，因此也必须列在这里才能被地标启动。省略时回退为全量事件 |
 | `landmark_counts` | 对象 | 可选；`地标 ID → 数量`，把固定设施分配到本图 POI 格上。键必须存在于 `landmarks.json`，数量为非负整数且总数 ≤ `poi_count`。分配使用独立随机流，和 POI/形状种子解耦；省略时本图没有地标，终点封印回退为 3 处 POI。内置图为 3 个检查点 + 1 商店 + 1 旅店 |
 | `randomize_seed` | 布尔 | 可选，默认 `false`；为 `true` 时每次进入新游戏都会重掷 `seed`，生成不同的地图。`同种子重开` 会保留当前种子 |
 | `seed` | 整数 | 主种子；与配置共同决定地图。`randomize_seed` 为 `true` 时只作为文件中的初始值 |
@@ -463,7 +465,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 1. **省略 = 全量**：不写 `character_ids` / `event_ids` 的旧地图或本地临时配置，行为与之前一致，显示并抽取所有角色与事件。
 2. **写了就必须有效**：字段必须是数组，不能为空、不能重复，所有 ID 必须存在于 `characters.json` / `events.json`。启动新游戏时会再次校验所选角色是否属于该图；事件抽取会跳过清单外事件。
 
-当前只保留一张内置地图 `borderland.json`。它列全 5 名角色和全部 17 个事件，并开启 `randomize_seed`，因此单图即可回归全部内容，同时每次进入都是一张新地图。后续需要固定地图或不同风格地图时，可以复制地图 JSON、调整生成参数与清单，并把 `randomize_seed` 设为 `false`（固定）或保留为 `true`（每局随机）。
+当前只保留一张内置地图 `borderland.json`。它列全 5 名角色和全部 18 个事件，并开启 `randomize_seed`，因此单图即可回归全部内容，同时每次进入都是一张新地图。后续需要固定地图或不同风格地图时，可以复制地图 JSON、调整生成参数与清单，并把 `randomize_seed` 设为 `false`（固定）或保留为 `true`（每局随机）。
 
 起点/终点默认从地图内侧 22% 的采样区域中选一对内陆格：距边界至少 7.5% 短边，BFS 距离 14～30 格，并按空间距离评分。可选字段 `start_norm` / `goal_norm`（`[x, y]`，0～1 归一化）仍可显式指定大致方位；采样失败时才回退到极值格。POI 从可用地块中按种子抽取，数量由 `poi_count` 控制（内置图 10）。随后 `_assign_landmarks()` 用独立随机流把 `landmark_counts` 中的地标依次分到 POI 格上；同一配置 + 形状种子 + 生态种子会复现完全相同的地标位置，因此读档与回归测试不需要额外存档字段。
 
@@ -542,7 +544,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 {
   "format": "zhenming.save",
   "save_version": 1,
-  "game_version": "1.10",
+  "game_version": "1.11",
   "saved_at": "2026-10-26T12:34:56",
   "meta": { "map_id": "borderland", "player_name": "林鸮", "round": 5, "...": "..." },
   "map": {
@@ -572,7 +574,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 |---|---|---|
 | `format` | 字符串 | 固定 `zhenming.save`；不匹配直接拒绝 |
 | `save_version` | 整数 | 当前为 `1`；结构不兼容时递增，读档不接受跨版本 |
-| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.10`，仅用于显示与排查 |
+| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.11`，仅用于显示与排查 |
 | `saved_at` | 字符串 | 本地时间 `YYYY-MM-DDTHH:MM:SS`；`meta.saved_at` 同值 |
 | `meta` | 对象 | 主菜单用摘要：地图/角色/回合/HP/金币/终点距离/同伴名，不含完整状态 |
 | `map.config` | 对象 | 本局实际生效的完整地图配置（含兜底后的参数），不是只存 `seed` |
@@ -582,12 +584,12 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 | `map.fog` | 对象 | `seen` / `scouted` / `entered` / `poi_known` 四个 `cell_id` 整数数组；逐格精确保留，不从其他标记推断 |
 | `player` | 对象 | `ActorState.to_dict()`：属性、词条、装备、背包、状态、标记、HP/AP、金币、`cell_id`、休息/任务进度、AP 惩罚 |
 | `companion` | 对象 | 空对象表示本局没有同伴；否则含 `actor`（同上）、任务 ID、阵营、好感、`favor_milestones`（已领取的羁绊里程碑，如 `{"trust_supply": true}`）、`stolen_item_id`（D-25 被偷物品 ID，空串表示无失物）、`recovery_attempt_round`（最近一次免费追查的回合，防止同回合重复尝试）、`theft_warning_given`（影是否已给出本局偷窃预警；读档后不会重复预警）、存活/到达终点、当前动向、台词、最后已知位置、互动冷却、访问过的 POI 与战斗摘要 |
-| `events` | 对象 | 待处理事件队列、冷却、本回合/本行动计数、单局随机事件累计、wander 累计、已访问 POI/区域、已揭示 POI、上一地形、揭示等级、终点尝试与事件日志；另含守卫状态 `goal_guard_suppressed_round`（本回合「退开」后压制守卫的回合号）、`goal_fail_streak`（连续失败次数，≥2 时守卫交涉/战斗 DC −2）、`goal_withdraw_count`（本局已退开次数，上限 2）；区域 ID 读档时按地图重新推导 |
+| `events` | 对象 | 待处理事件队列、冷却、本回合/本行动计数、单局随机事件累计、wander 累计、已访问 POI/区域、已揭示 POI、上一地形、揭示等级、终点尝试与事件日志；另含守卫状态 `goal_guard_suppressed_round`（本回合「退开」后压制守卫的回合号）、`goal_fail_streak`（连续失败次数，≥2 时守卫交涉/战斗 DC −2）、`goal_withdraw_count`（本局已退开次数，上限 2）。v1.11 另含 `discovered_pois`（已领取首次发现奖励的 POI，与用于封印的已访问集合分开）、`checkpoint_paths`（检查点 POI ID → `{path, path_name}`）、`checkpoint_resonance` / `checkpoint_resonance_text`（封印闭合时结算的共鸣 ID 与文本）；区域 ID 读档时按地图重新推导 |
 | `rng.master_seed` | 整数 | 本局主种子 |
 | `rng.streams` | 对象 | 命名随机流 → `RandomNumberGenerator.state` 的**十进制字符串**；避免 64 位整数在 JSON 中丢精度 |
 | `game` | 对象 | 回合、角色/任务 ID、世界纪事、终点到达记录与胜利层级、选中地图配置、子格视觉位置、最近提示/侦察报告、暴露回合、视野扩张格数与保持回合、`pending_item_overflows`（A3 背包满时排队的奖励，元素含 `item_id` / `count` / `source`；读档后仍要求玩家取舍） |
 
-存档只在 `GameManager.can_save_game()` 为真时写入：序章已关闭、不在移动/暂停、没有活动事件或战斗。已画路径属于瞬时输入，不写入存档。胜利或死亡会删除该槽，避免读档回滚结局。固定地标的位置（`cell.landmark_id`）不单独写入存档：`map.config` 已包含 `landmark_counts`，读档时由 `generate_exact()` 按相同配置与种子重建，因此检查点/商店/旅店不会漂移。完整行为见 `docs/实现决策记录.md` D-41/D-63/D-69。
+存档只在 `GameManager.can_save_game()` 为真时写入：序章已关闭、不在移动/暂停、没有活动事件或战斗。已画路径属于瞬时输入，不写入存档。胜利或死亡会删除该槽，避免读档回滚结局。固定地标的位置（`cell.landmark_id`）不单独写入存档：`map.config` 已包含 `landmark_counts`，读档时由 `generate_exact()` 按相同配置与种子重建，因此检查点/商店/旅店不会漂移。旧存档没有 `discovered_pois` 时，读档会把已有 `visited_pois` 一并视为已发现，避免重复领取发现奖励。完整行为见 `docs/实现决策记录.md` D-41/D-63/D-69/D-70。
 
 ---
 
@@ -615,8 +617,8 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 3. 角色初始装备/物品、隐藏任务引用存在；隐藏任务的 `character_id` 与归属角色一致。
 4. 事件地形引用存在（`any` 除外）；检定的 `attr` 属于六属性。
 5. 事件中的 `item_id` / `status_id` / `flag_id` / `choose_from` 引用存在；`trade` 的 `buy` / `sell` / `barter` 物品存在，`sell` 只接受 `tradable = true` 的物品；`inn` 的 `gold_cost` / `heal_hp` / `restore_ap` 为非负整数且不能全为 0。
-6. 事件 `trigger`、`resolution`、`type` 等枚举值在允许集合内（P0 补全，`trigger` 含 `facility`，`resolution` 含 `inn`）。
-7. 地标表：`id` 唯一；`color` 若填写必须是合法 HTML 颜色；`short_name` 非空；`facility_event_id` 必须引用存在且 `trigger = "facility"` 的事件；同一条地标不能同时 `counts_for_seal = true` 和提供设施事件（检查点只计封印，商店/旅店只提供设施）。
+6. 事件 `trigger`、`resolution`、`type` 等枚举值在允许集合内（`trigger` 含 `facility` / `checkpoint`，`resolution` 含 `inn` / `checkpoint`）；`checkpoint` 选项必须提供非空 `params.path` 与 `params.path_name`，否则无法跨存档汇总共鸣。
+7. 地标表：`id` 唯一；`color` 若填写必须是合法 HTML 颜色；`short_name` 非空；`facility_event_id` 必须引用存在且 `trigger = "facility"` 的事件；`checkpoint_event_id` 必须引用存在且 `trigger = "checkpoint"` 的事件，并要求该地标 `counts_for_seal = true`；同一条地标不能同时 `counts_for_seal = true` 和提供设施事件（检查点只计封印，商店/旅店只提供设施），也不能同时提供设施事件与检查点仪式。
 8. 地图配置由 `MapConfigLoader` 单独校验：必填字段非空、格数 150～800、`poi_count` ≥1、地形 ID 存在、`randomize_seed` 为布尔值；`landmark_counts` 必须为对象，键存在于 `landmarks.json`，数量为非负整数且总数不超过 `poi_count`；若声明 `character_ids` / `event_ids`，还要求非空、无重复且引用存在；生成后再由 `MapGenerator` 做连通性/地形/死区/路径 AP/起终点距离校验。
 
 新增或修改数据结构时：先改本文件 → 改 JSON → 跑自检 → 跑 headless 回归。
@@ -625,7 +627,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 
 ## 12. landmarks.json（固定地标）
 
-地标表描述地图上位置固定、可被玩家辨认的设施。它不存坐标：地图配置的 `landmark_counts` 决定数量，`MapGenerator._assign_landmarks()` 在 POI 抽取完成后把这些地标依次分配到 POI 格。地标格仍然是 POI（有 `poi_id`、首次踏足奖励与探索进度），只是多了 `cell.landmark_id` 与对应的事件/封印行为；`always_visible = true` 的地标标记不受迷雾限制。
+地标表描述地图上位置固定、可被玩家辨认的设施。它不存坐标：地图配置的 `landmark_counts` 决定数量，`MapGenerator._assign_landmarks()` 在 POI 抽取完成后把这些地标依次分配到 POI 格。地标格仍然是 POI（有 `poi_id`、首次踏足奖励与探索进度），只是多了 `cell.landmark_id` 与对应的触发/封印行为；`always_visible = true` 的地标标记不受迷雾限制。
 
 ```json
 {
@@ -635,8 +637,9 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
   "color": "#3FB59A",
   "always_visible": true,
   "counts_for_seal": true,
+  "checkpoint_event_id": "checkpoint_ritual",
   "facility_event_id": "",
-  "hover_hint": "首次踏足激活；集齐全部检查点可解除终点封印。"
+  "hover_hint": "进入后触发封印仪式；集齐全部检查点可解除终点封印。"
 }
 ```
 
@@ -647,21 +650,24 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 | `color` | 字符串 | HTML 颜色；地图标记与悬停条使用该颜色 |
 | `always_visible` | 布尔 | `true` 时不受 POI 已知/迷雾限制，始终绘制小点标记。内置检查点、商店、旅店均为 `true` |
 | `counts_for_seal` | 布尔 | `true` 时该地标计入终点封印；普通游玩要求激活地图上全部此类地标。与 `facility_event_id` 互斥 |
+| `checkpoint_event_id` | 字符串 | 可选；进入该检查点格时直接触发的仪式事件 ID，必须存在、`trigger = "checkpoint"`，且本记录 `counts_for_seal = true`。空串表示该格不举行仪式。与 `facility_event_id` 互斥 |
 | `facility_event_id` | 字符串 | 可选；进入该格时直接触发的事件 ID，必须存在且 `trigger = "facility"`。空串表示没有设施事件 |
-| `hover_hint` | 字符串 | 鼠标悬停时追加在名称/距离后的一句用途说明 |
+| `hover_hint` | 字符串 | 鼠标悬停时追加在名称/距离/状态后的一句用途说明；不得写价格、恢复量等交易细节 |
 
 当前内置地标：
 
 | ID | short_name | 用途 |
 |---|---|---|
-| `checkpoint` | 检查点 | 首次踏足发放 POI 发现奖励并写入 `visited_pois`，同时推进终点封印；不抽随机 POI 事件。地图上画为青色菱形 |
-| `shop` | 商店 | 进入时触发 `traveling_shop`；交易菜单支持购买补给/药水/稀有护符，以及出售兽皮/草药。地图上画为金色方块 |
-| `inn` | 旅店 | 进入时触发 `roadside_inn`；支付固定金币恢复 HP/AP。地图上画为蓝色圆形 |
+| `checkpoint` | 检查点 | 首次进入发放 POI 发现奖励并触发 `checkpoint_ritual`；仪式提供知誓/守誓/血契/离开四种选择，选择前三者会激活该检查点并推进终点封印。已激活后不再触发。地图上画为青色菱形 |
+| `shop` | 商店 | 进入时触发 `traveling_shop`，打开独立的「交易页」；支持购买补给/药水/稀有护符，以及出售兽皮/草药。地图上画为金色方块 |
+| `inn` | 旅店 | 进入时触发 `roadside_inn`，打开独立的「休息页」；支付固定金币恢复 HP/AP。地图上画为蓝色圆形 |
 
 分配与运行规则：
 
 1. `landmark_counts` 的键按名称排序后依次取 POI；使用独立 RNG（种子含地图 ID、形状种子与生态种子），不改变既有 POI、起终点或地形序列。
 2. 同一格最多一个地标；总数量超过 `poi_count` 时由配置校验拒绝。
-3. 设施事件由 `EventManager.on_cell_entered()` 直接 `_start_event(..., counted: false)`，不进入队列、不占单局随机事件上限；每次进入都可再次触发。
-4. 检查点的封印进度只认已访问的检查点 POI；没有 `counts_for_seal` 地标的旧地图回退为任意 3 处 POI。
-5. 地图与 HUD 的标记只读取本表字段：`color` 决定标记色，`hover_hint` 决定悬停补充说明；标记悬停文本由名字、距离、激活状态与设施价格摘要拼成，不写回数据文件。
+3. 设施事件由 `EventManager.on_cell_entered()` 直接 `_start_event(..., counted: false)`，不进入队列、不占单局随机事件上限；每次进入都可再次触发，完整买卖/休息内容只在进入后的整页界面展示。
+4. 检查点仪式同样由地标直接启动，优先级与设施相同。进入未激活的检查点且 `checkpoint_event_id` 非空时，先发放首次发现奖励，再开仪式；不抽随机 POI 事件。选择「离开」不激活、不记录誓约，可再次进入；任一誓约选项会写入 `checkpoint_paths` 并把该 POI 标记为已访问，此后不再触发。
+5. 检查点的封印进度只认已激活的检查点 POI；没有 `counts_for_seal` 地标的旧地图回退为任意 3 处 POI。
+6. 封印闭合时，`EventManager` 按全部检查点的 `path` 汇总最终共鸣：全部 `lore` → 金币 +15 并揭示终点方向；全部 `ward` → HP +2；全部 `blood` → AP +2；混合誓约 → HP +1 的「残响」。共鸣结果写入 `checkpoint_resonance` / `checkpoint_resonance_text`，并显示在结算页的本局回顾中。
+7. 地图与 HUD 的标记只读取本表字段：`color` 决定标记色，`hover_hint` 决定悬停补充说明。悬停文本只包含名称、距离与激活/未激活状态；商店价格、旅店费用、检查点可选分支都不出现在悬停条中，必须在进入后的子页面或仪式面板里查看。`hover_hint` 不得写回交易数值。

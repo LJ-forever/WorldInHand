@@ -1835,6 +1835,108 @@
       ]
     },
     {
+      "id": "checkpoint_ritual",
+      "name": "封印石柱",
+      "trigger": "checkpoint",
+      "terrains": [
+        "any"
+      ],
+      "weight": 0,
+      "cooldown": 0,
+      "per_character": false,
+      "text": "半埋在风沙里的石柱发出低沉的嗡鸣，柱面上的纹路正与远处终点遥相呼应。你可以用自己的方式唤醒它；不同的回应会在最后留下不同的回响。",
+      "choices": [
+        {
+          "id": "lore",
+          "text": "抄录柱上的铭文（知誓）",
+          "check": null,
+          "resolution": "checkpoint",
+          "ai_allowed": false,
+          "params": {
+            "path": "lore",
+            "path_name": "知誓"
+          },
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "reveal",
+                  "kind": "nearest_poi",
+                  "value": 1
+                },
+                {
+                  "type": "gold",
+                  "value": 8
+                }
+              ],
+              "note": "你看懂了石柱上的半段铭文，荒原的轮廓在脑中清晰了一分。"
+            }
+          }
+        },
+        {
+          "id": "ward",
+          "text": "以意志加固封印（守誓）",
+          "check": null,
+          "resolution": "checkpoint",
+          "ai_allowed": false,
+          "params": {
+            "path": "ward",
+            "path_name": "守誓"
+          },
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": 2
+                }
+              ],
+              "note": "你把意志压进石柱，暖流顺着掌心收回，伤口也收拢了些。"
+            }
+          }
+        },
+        {
+          "id": "blood",
+          "text": "割掌唤醒石柱（血契）",
+          "check": null,
+          "resolution": "checkpoint",
+          "ai_allowed": false,
+          "params": {
+            "path": "blood",
+            "path_name": "血契"
+          },
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -1
+                },
+                {
+                  "type": "ap",
+                  "value": 1
+                }
+              ],
+              "note": "血珠渗进纹路，石柱短暂地亮了起来，你的脚步也轻了一分。"
+            }
+          }
+        },
+        {
+          "id": "leave",
+          "text": "不触碰石柱，暂时离开",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": false,
+          "outcomes": {
+            "success": {
+              "effects": [],
+              "note": "你没有回应石柱的低鸣，封印仍然停在原处。下次回来还可以再试。"
+            }
+          }
+        }
+      ]
+    },
+    {
       "id": "traveling_shop",
       "name": "行商营地",
       "trigger": "facility",

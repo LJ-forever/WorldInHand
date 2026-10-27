@@ -453,85 +453,13 @@ func _landmark_hover_text(cell: MapData.Cell) -> String:
 			if EventManager.is_poi_visited(cell.poi_id):
 				parts.append("已激活")
 			else:
-				parts.append("未激活 · 踏足即计入封印")
-		"shop":
-			var shop_summary := _trade_offer_summary(String(record.get("facility_event_id", "")))
-			if not shop_summary.is_empty():
-				parts.append(shop_summary)
-		"inn":
-			var inn_summary := _inn_hover_summary(String(record.get("facility_event_id", "")))
-			if not inn_summary.is_empty():
-				parts.append(inn_summary)
+				parts.append("未激活")
+			parts.append("进入后触发封印仪式")
 		_:
 			var hint := String(record.get("hover_hint", ""))
 			if not hint.is_empty():
 				parts.append(hint)
 	return " · ".join(parts)
-
-
-func _trade_offer_summary(event_id: String) -> String:
-	if event_id.is_empty():
-		return ""
-	var event := DataManager.get_record("events", event_id)
-	var offers: Array = []
-	for raw_choice in event.get("choices", []):
-		var choice: Dictionary = raw_choice
-		if String(choice.get("resolution", "")) != "trade":
-			continue
-		var params: Dictionary = choice.get("params", {})
-		offers = params.get("offers", [])
-		break
-	if offers.is_empty():
-		return ""
-	var buys: Array[String] = []
-	var sells: Array[String] = []
-	for raw_offer in offers:
-		var offer: Dictionary = raw_offer
-		var item_name := _marker_item_name(String(offer.get("item_id", "")))
-		var price := int(offer.get("price", 0))
-		match String(offer.get("type", "")):
-			"buy":
-				buys.append("%s%d" % [item_name, price])
-			"sell":
-				sells.append("%s%d" % [item_name, price])
-	var parts: Array[String] = []
-	if not buys.is_empty():
-		parts.append("买 " + "、".join(buys))
-	if not sells.is_empty():
-		parts.append("卖 " + "、".join(sells))
-	if parts.is_empty():
-		return ""
-	return " · ".join(parts) + " 金币"
-
-
-func _inn_hover_summary(event_id: String) -> String:
-	if event_id.is_empty():
-		return ""
-	var event := DataManager.get_record("events", event_id)
-	for raw_choice in event.get("choices", []):
-		var choice: Dictionary = raw_choice
-		if String(choice.get("resolution", "")) != "inn":
-			continue
-		var params: Dictionary = choice.get("params", {})
-		var cost := maxi(0, int(params.get("gold_cost", 0)))
-		var heal_hp := maxi(0, int(params.get("heal_hp", 0)))
-		var restore_ap := maxi(0, int(params.get("restore_ap", 0)))
-		var text := "休息 %d 金：HP+%d、AP+%d" % [cost, heal_hp, restore_ap]
-		var player := GameManager.player
-		if player != null:
-			if player.gold < cost:
-				text += "（金币不足）"
-			elif player.hp >= player.hp_max and player.ap_deci >= player.ap_max_deci:
-				text += "（状态已满）"
-		return text
-	return ""
-
-
-func _marker_item_name(item_id: String) -> String:
-	if item_id.is_empty():
-		return "?"
-	var record := DataManager.get_record("items", item_id)
-	return String(record.get("name", item_id))
 
 
 func _poi_hover_text(cell: MapData.Cell) -> String:
@@ -546,8 +474,6 @@ func _poi_hover_text(cell: MapData.Cell) -> String:
 	var distance := _marker_distance_text(cell.id)
 	if not distance.is_empty():
 		parts.append(distance)
-	if not visited:
-		parts.append("首次踏足可得发现奖励")
 	return " · ".join(parts)
 
 

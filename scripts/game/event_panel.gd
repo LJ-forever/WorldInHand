@@ -42,7 +42,7 @@ func _on_event_started(event_data: Dictionary) -> void:
 	visible = true
 	_choices_locked = false
 	var trigger := String(event_data.get("trigger", ""))
-	var trigger_names := {"goal": "终点", "poi": "地点", "facility": "设施", "enter_region": "区域", "wander": "游荡"}
+	var trigger_names := {"goal": "终点", "poi": "地点", "facility": "设施", "checkpoint": "检查点", "enter_region": "区域", "wander": "游荡"}
 	title_label.text = String(event_data.get("name", "事件"))
 	meta_label.text = "触发：%s · 地形：%s" % [
 		String(trigger_names.get(trigger, trigger)),

@@ -1,7 +1,7 @@
 extends Node
 ## 事件系统：触发检测、优先级队列、冷却、2d6 检定与效果结算。
 ## 规则来自设计文档 §7 / §8，并按地块放大后的节奏调整：
-## - goal(4) > poi(3) > enter_region(2) > wander(1)；
+## - goal(4) > poi(3) = facility(3) = checkpoint(3) > enter_region(2) > wander(1)；
 ## - 每次移动行动最多结算 2 个事件，事件之间至少间隔 3 AP；
 ## - 同一行动内每种触发源最多 1 次，每回合最多 3 个随机事件；
 ## - 队列最多 2 个，溢出时丢弃最低优先级；每个事件冷却 2 回合；
@@ -19,7 +19,7 @@ signal event_finished(event_id: String)
 signal dice_rolled(payload: Dictionary)
 signal log_added(text: String)
 
-const PRIORITY := {"goal": 4, "poi": 3, "facility": 3, "enter_region": 2, "wander": 1}
+const PRIORITY := {"goal": 4, "poi": 3, "facility": 3, "checkpoint": 3, "enter_region": 2, "wander": 1}
 const MAX_QUEUE := 2
 const MAX_EVENTS_PER_ACTION := 2
 const MIN_EVENT_AP_SPACING_DECI := 30
@@ -73,7 +73,9 @@ const INFO_EVENTS := ["lost", "ancient_stele", "cliff"]
 var pending_events: Array[Dictionary] = []
 var active_event_id: String = ""
 var active_event: Dictionary = {}
-## 当前事件的触发来源（goal/poi/enter_region/wander）；供 UI 调试与平衡统计读取。
+## 当前事件的触发地块；检查点仪式需要用它写回封印状态。
+var active_cell_id: int = -1
+## 当前事件的触发来源（goal/poi/facility/checkpoint/enter_region/wander）；供 UI 调试与平衡统计读取。
 var active_trigger: String = ""
 
 var _cooldowns: Dictionary = {}
@@ -88,6 +90,8 @@ var _action_active: bool = false
 var _recent_event_ids: Array[String] = []
 var _wander_ap_accum: int = 0
 var _visited_pois: Dictionary = {}
+## 首次踏足发现奖励单独记账：检查点踩到即发现，但只有完成仪式才算激活封印。
+var _discovered_pois: Dictionary = {}
 var _visited_regions: Dictionary = {}
 var _revealed_pois: Dictionary = {}
 var _previous_terrain: String = ""
@@ -105,6 +109,11 @@ var _goal_guard_suppressed_round: int = 0
 var _goal_fail_streak: int = 0
 ## 本局已成功退开的次数；达到 GOAL_WITHDRAW_LIMIT 后「退开」不可再选。
 var _goal_withdraw_count: int = 0
+## 检查点仪式选择：poi_id -> {path, name}；用于最终共鸣与结算回顾。
+var _checkpoint_paths: Dictionary = {}
+## 三个检查点全部激活后的共鸣结果；空字符串表示尚未闭合。
+var _checkpoint_resonance: String = ""
+var _checkpoint_resonance_text: String = ""
 var _pending_goal_victory: bool = false
 var _pending_death: bool = false
 var _pending_death_reason: String = ""
@@ -129,6 +138,7 @@ func reset_state() -> void:
 	pending_events.clear()
 	active_event_id = ""
 	active_event = {}
+	active_cell_id = -1
 	active_trigger = ""
 	_cooldowns.clear()
 	_events_this_round = 0
@@ -142,6 +152,7 @@ func reset_state() -> void:
 	_recent_event_ids.clear()
 	_wander_ap_accum = 0
 	_visited_pois.clear()
+	_discovered_pois.clear()
 	_visited_regions.clear()
 	_revealed_pois.clear()
 	_previous_terrain = ""
@@ -155,6 +166,9 @@ func reset_state() -> void:
 	_goal_guard_suppressed_round = 0
 	_goal_fail_streak = 0
 	_goal_withdraw_count = 0
+	_checkpoint_paths.clear()
+	_checkpoint_resonance = ""
+	_checkpoint_resonance_text = ""
 	_pending_goal_victory = false
 	_pending_death = false
 	_pending_death_reason = ""
@@ -188,6 +202,7 @@ func to_save_data() -> Dictionary:
 		"recent_event_ids": _recent_event_ids.duplicate(),
 		"wander_ap_accum": _wander_ap_accum,
 		"visited_pois": _visited_pois.duplicate(true),
+		"discovered_pois": _discovered_pois.duplicate(true),
 		"visited_regions": visited_regions,
 		"revealed_pois": revealed_pois,
 		"previous_terrain": _previous_terrain,
@@ -197,6 +212,9 @@ func to_save_data() -> Dictionary:
 		"goal_guard_suppressed_round": _goal_guard_suppressed_round,
 		"goal_fail_streak": _goal_fail_streak,
 		"goal_withdraw_count": _goal_withdraw_count,
+		"checkpoint_paths": _checkpoint_paths.duplicate(true),
+		"checkpoint_resonance": _checkpoint_resonance,
+		"checkpoint_resonance_text": _checkpoint_resonance_text,
 		"event_log": _event_log.duplicate(),
 		"random_events_enabled": random_events_enabled,
 	}
@@ -253,6 +271,14 @@ func load_save_data(map: MapData, data: Dictionary) -> bool:
 	if visited_pois is Dictionary:
 		for poi_id in visited_pois.keys():
 			_visited_pois[String(poi_id)] = true
+	_discovered_pois.clear()
+	var discovered_pois = data.get("discovered_pois", {})
+	if discovered_pois is Dictionary:
+		for poi_id in discovered_pois.keys():
+			_discovered_pois[String(poi_id)] = true
+	# 旧存档没有 discovered_pois：已访问 POI 必然已经发现过。
+	for poi_id in _visited_pois.keys():
+		_discovered_pois[String(poi_id)] = true
 	_visited_regions.clear()
 	var visited_regions = data.get("visited_regions", {})
 	if visited_regions is Dictionary:
@@ -270,6 +296,18 @@ func load_save_data(map: MapData, data: Dictionary) -> bool:
 	_goal_guard_suppressed_round = maxi(0, int(data.get("goal_guard_suppressed_round", 0)))
 	_goal_fail_streak = maxi(0, int(data.get("goal_fail_streak", 0)))
 	_goal_withdraw_count = clampi(int(data.get("goal_withdraw_count", 0)), 0, GOAL_WITHDRAW_LIMIT)
+	_checkpoint_paths.clear()
+	var checkpoint_paths = data.get("checkpoint_paths", {})
+	if checkpoint_paths is Dictionary:
+		for poi_id in checkpoint_paths.keys():
+			var entry = checkpoint_paths[poi_id]
+			if entry is Dictionary:
+				_checkpoint_paths[String(poi_id)] = {
+					"path": String(entry.get("path", "")),
+					"name": String(entry.get("name", "")),
+				}
+	_checkpoint_resonance = String(data.get("checkpoint_resonance", ""))
+	_checkpoint_resonance_text = String(data.get("checkpoint_resonance_text", ""))
 	_event_log.clear()
 	for line in data.get("event_log", []):
 		_event_log.append(String(line))
@@ -277,6 +315,7 @@ func load_save_data(map: MapData, data: Dictionary) -> bool:
 	# 存档点一定在事件外：清掉交易/选项等瞬时状态，避免读档后残留旧菜单。
 	active_event_id = ""
 	active_event = {}
+	active_cell_id = -1
 	_choice_used.clear()
 	_pending.clear()
 	_pending_goal_victory = false
@@ -393,6 +432,49 @@ func is_checkpoint_cell(cell_id: int) -> bool:
 ## 检查点在封印目标中的序号（0 起）；不是检查点返回 -1。
 func checkpoint_index(cell_id: int) -> int:
 	return _checkpoint_cell_ids().find(cell_id)
+
+
+## 检查点的仪式选择；未激活或旧地图返回空字典。
+func checkpoint_path_of(poi_id: String) -> Dictionary:
+	if _checkpoint_paths.has(poi_id):
+		var entry = _checkpoint_paths[poi_id]
+		if entry is Dictionary:
+			return (entry as Dictionary).duplicate(true)
+	return {}
+
+
+## 结算页用：按检查点顺序汇总“知誓 ×2 · 守誓 ×1”。
+func get_checkpoint_path_summary() -> String:
+	var map := GameManager.map
+	if map == null:
+		return ""
+	var counts: Dictionary = {}
+	var order: Array[String] = []
+	for cell_id in _checkpoint_cell_ids():
+		var cell := map.get_cell(cell_id)
+		if cell == null:
+			continue
+		var entry := checkpoint_path_of(cell.poi_id)
+		var path_name := String(entry.get("name", "")).strip_edges()
+		if path_name.is_empty():
+			continue
+		if not counts.has(path_name):
+			order.append(path_name)
+		counts[path_name] = int(counts.get(path_name, 0)) + 1
+	if counts.is_empty():
+		return ""
+	var parts: Array[String] = []
+	for path_name in order:
+		parts.append("%s ×%d" % [path_name, int(counts[path_name])])
+	return "检查点选择：%s" % " · ".join(parts)
+
+
+func get_checkpoint_resonance_id() -> String:
+	return _checkpoint_resonance
+
+
+func get_checkpoint_resonance_text() -> String:
+	return _checkpoint_resonance_text
 
 
 func get_goal_seal_progress() -> int:
@@ -544,6 +626,22 @@ func on_cell_entered(cell_id: int) -> bool:
 			_goal_counted = true
 		_enqueue_event("goal_guard", "goal", cell_id, counted)
 	elif not is_goal:
+		var checkpoint_event_id := _checkpoint_event_id_for_cell(cell)
+		if random_events_enabled and not checkpoint_event_id.is_empty() \
+				and (cell.poi_id.is_empty() or not _visited_pois.has(cell.poi_id)):
+			# 检查点仪式由地标直接触发，不占随机事件队列与单局上限。
+			var checkpoint_note := _grant_poi_discovery(cell_id, cell)
+			var checkpoint_entry := {
+				"event_id": checkpoint_event_id,
+				"trigger": "checkpoint",
+				"cell_id": cell_id,
+				"priority": int(PRIORITY.get("checkpoint", 3)),
+				"counted": false,
+				"note": checkpoint_note,
+			}
+			if _start_event(checkpoint_entry):
+				_previous_terrain = cell.terrain
+				return true
 		var facility_event_id := _facility_event_id_for_cell(cell)
 		if random_events_enabled and not facility_event_id.is_empty():
 			var facility_note := ""
@@ -561,7 +659,7 @@ func on_cell_entered(cell_id: int) -> bool:
 			if _start_event(facility_entry):
 				_previous_terrain = cell.terrain
 				return true
-		if random_events_enabled and facility_event_id.is_empty() \
+		if random_events_enabled and facility_event_id.is_empty() and checkpoint_event_id.is_empty() \
 				and not cell.poi_id.is_empty() and not _visited_pois.has(cell.poi_id):
 			var discovery_note := _grant_poi_discovery(cell_id, cell)
 			# 检查点只负责封印进度，不抽随机 POI 事件。
@@ -596,13 +694,17 @@ func on_cell_entered(cell_id: int) -> bool:
 
 
 ## POI 首次踏足：除了可能触发地点事件，还立即给一份保底发现奖励。
-## 奖励和“已访问”在同一步写入，读档后不会重复领取。
+## 检查点踩到即算发现，但封印进度只在完成仪式后写入，因此离开不会白拿激活。
 func _grant_poi_discovery(cell_id: int, cell: MapData.Cell) -> String:
 	var player := GameManager.player
 	var map := GameManager.map
 	if player == null or map == null or cell == null:
 		return ""
-	_visited_pois[cell.poi_id] = true
+	if cell.poi_id.is_empty() or _discovered_pois.has(cell.poi_id):
+		return ""
+	_discovered_pois[cell.poi_id] = true
+	if not is_checkpoint_cell(cell_id):
+		_visited_pois[cell.poi_id] = true
 	var rng := RNGManager.get_stream("exploration")
 	var roll := rng.randf()
 	var terrain_name := map.terrain_display_name(cell.terrain)
@@ -622,9 +724,7 @@ func _grant_poi_discovery(cell_id: int, cell: MapData.Cell) -> String:
 		if bool(potion_grant.get("queued", false)):
 			note += " 背包已满，请在背包页取舍。"
 	if is_checkpoint_cell(cell_id):
-		var seal_text := get_goal_seal_text()
-		if not seal_text.is_empty():
-			note += " 检查点已激活：%s。" % seal_text
+		note += " 石柱尚未回应；进入仪式并选择誓约后才会激活封印。"
 	GameManager.add_world_log(note)
 	GameManager.inventory_changed.emit()
 	GameManager.world_notice.emit(note)
@@ -637,6 +737,14 @@ func _facility_event_id_for_cell(cell: MapData.Cell) -> String:
 		return ""
 	var record := DataManager.get_record("landmarks", cell.landmark_id)
 	return String(record.get("facility_event_id", "")).strip_edges()
+
+
+## 检查点仪式的事件 ID 由地标表提供；商店/旅店返回空字符串。
+func _checkpoint_event_id_for_cell(cell: MapData.Cell) -> String:
+	if cell == null or cell.landmark_id.is_empty():
+		return ""
+	var record := DataManager.get_record("landmarks", cell.landmark_id)
+	return String(record.get("checkpoint_event_id", "")).strip_edges()
 
 
 ## 移动实际扣除 AP 后调用。每跨过 3 AP 做一次 13% 的 wander 判定。
@@ -724,6 +832,8 @@ func choose_choice(choice_id: String) -> Dictionary:
 			return _begin_heal(choice, _check_payload(choice, "success", true, ""))
 		"inn":
 			return _resolve_inn(choice)
+		"checkpoint":
+			return _resolve_checkpoint(choice)
 		_:
 			var payload := _roll_check(choice)
 			var level := String(payload.get("level", "success"))
@@ -937,6 +1047,7 @@ func finish_event() -> void:
 		_cooldowns[event_id] = maxi(int(_cooldowns.get(event_id, 0)), cooldown)
 	active_event_id = ""
 	active_event = {}
+	active_cell_id = -1
 	active_trigger = ""
 	_choice_used.clear()
 	_pending.clear()
@@ -1208,6 +1319,7 @@ func _start_event(entry: Dictionary) -> bool:
 	var counted := bool(entry.get("counted", true))
 	active_event_id = event_id
 	active_event = record.duplicate(true)
+	active_cell_id = int(entry.get("cell_id", -1))
 	var discovery_note := String(entry.get("note", "")).strip_edges()
 	if not discovery_note.is_empty():
 		active_event["discovery_note"] = discovery_note
@@ -1526,7 +1638,14 @@ func _resolve_outcome(choice: Dictionary, level: String, payload: Dictionary) ->
 	return result
 
 
-func _finish_resolution(choice: Dictionary, level: String, payload: Dictionary, applied: Dictionary) -> Dictionary:
+func _finish_resolution(
+	choice: Dictionary,
+	level: String,
+	payload: Dictionary,
+	applied: Dictionary,
+	outcome_note: String = "",
+	level_name: String = ""
+) -> Dictionary:
 	var result := _base_result(choice, level, payload)
 	result["kind"] = "outcome"
 	result["effect_messages"] = applied.get("messages", [])
@@ -1536,6 +1655,10 @@ func _finish_resolution(choice: Dictionary, level: String, payload: Dictionary, 
 	result["enter_goal"] = bool(applied.get("enter_goal", false))
 	result["death"] = bool(applied.get("death", false))
 	result["knockback"] = int(applied.get("knockback", 0))
+	if not outcome_note.is_empty():
+		result["outcome_note"] = outcome_note
+	if not level_name.is_empty():
+		result["level_name"] = level_name
 	var player := GameManager.player
 	result["hp"] = player.hp
 	result["ap_deci"] = player.ap_deci
@@ -1634,12 +1757,16 @@ func _begin_trade(choice: Dictionary, level: String, payload: Dictionary) -> Dic
 	var trade_payload := payload.duplicate(true)
 	trade_payload["offers"] = offers
 	trade_payload["can_decline"] = bool(params.get("can_decline", true))
+	var shop_name := String(active_event.get("name", "行商"))
+	var gold_now := player.gold
 	if level == "great_success":
-		trade_payload["note"] = "大成功：本次交易价格减半。"
+		trade_payload["note"] = "大成功：本次交易价格减半。当前金币 %d。" % gold_now
+	else:
+		trade_payload["note"] = "当前金币 %d。选择一笔交易，或离开交易页。" % gold_now
 	_pending = {"type": "trade", "choice_id": String(choice.get("id", "")), "level": level, "payload": trade_payload}
 	var result := _base_result(choice, level, trade_payload)
 	result["kind"] = "trade_menu"
-	result["title"] = "交易"
+	result["title"] = "%s · 交易页" % shop_name
 	result["offers"] = offers
 	result["can_decline"] = bool(params.get("can_decline", true))
 	_emit_progress(result)
@@ -1768,6 +1895,119 @@ func _resolve_inn(choice: Dictionary) -> Dictionary:
 	result["status_details"] = player.status_detail_text()
 	_emit_progress(result)
 	return result
+
+
+## 检查点仪式：选择一种誓约并激活封印；第三处会按三次选择的组合结算共鸣。
+func _resolve_checkpoint(choice: Dictionary) -> Dictionary:
+	var map := GameManager.map
+	var player := GameManager.player
+	if map == null or player == null:
+		return _error_result("当前没有可用的检查点。")
+	var cell := map.get_cell(active_cell_id)
+	if cell == null or not is_checkpoint_cell(active_cell_id):
+		return _error_result("当前不是有效的检查点。")
+	if cell.poi_id.is_empty() or _visited_pois.has(cell.poi_id):
+		return _error_result("这处检查点已经激活。")
+	var params: Dictionary = choice.get("params", {})
+	var path := String(params.get("path", "")).strip_edges()
+	var path_name := String(params.get("path_name", "")).strip_edges()
+	if path.is_empty() or path_name.is_empty():
+		return _error_result("检查点仪式缺少有效的选择记录。")
+	_visited_pois[cell.poi_id] = true
+	_checkpoint_paths[cell.poi_id] = {"path": path, "name": path_name}
+	var outcome := _outcome_for(choice, "success")
+	var effects: Array = []
+	for effect in outcome.get("effects", []):
+		effects.append(effect)
+	for effect in outcome.get("player_effects", []):
+		effects.append(effect)
+	var applied := _apply_effects(effects)
+	var activation_text := "检查点激活（%s）：%s。" % [path_name, get_goal_seal_text()]
+	applied["messages"].append(activation_text)
+	applied["rewards"].append({
+		"text": activation_text,
+		"kind": "seal",
+		"hint": "终点封印进度已更新",
+	})
+	if not bool(applied.get("death", false)) and is_goal_seal_open() and _checkpoint_resonance.is_empty():
+		_resolve_checkpoint_resonance(applied)
+	var result := _finish_resolution(
+		choice,
+		"success",
+		_check_payload(choice, "success", true, ""),
+		applied,
+		String(outcome.get("note", "")),
+		"检查点"
+	)
+	return result
+
+
+## 三次检查点选择全部相同时触发专属共鸣；混合选择只留下较弱的残响。
+func _resolve_checkpoint_resonance(applied: Dictionary) -> void:
+	var map := GameManager.map
+	if map == null:
+		return
+	var paths: Array[String] = []
+	var all_same := true
+	var first_path := ""
+	for cell_id in _checkpoint_cell_ids():
+		var cell := map.get_cell(cell_id)
+		if cell == null:
+			continue
+		var entry := checkpoint_path_of(cell.poi_id)
+		var path := String(entry.get("path", "")).strip_edges()
+		if path.is_empty():
+			all_same = false
+			continue
+		if first_path.is_empty():
+			first_path = path
+		elif path != first_path:
+			all_same = false
+		paths.append(path)
+	if paths.is_empty():
+		return
+	var resonance_effects: Array = []
+	var text := ""
+	if all_same:
+		_checkpoint_resonance = first_path
+		match first_path:
+			"lore":
+				resonance_effects = [
+					{"type": "gold", "value": 15},
+					{"type": "reveal", "kind": "goal_direction", "value": 1},
+				]
+				text = "知誓共鸣：三座石柱在你脑中连成一张完整的星图。获得 15 金币，并看见终点的方向。"
+			"ward":
+				resonance_effects = [{"type": "hp", "value": 2}]
+				text = "守誓共鸣：三道封印彼此扣合，伤口在暖流中收拢。HP +2。"
+			"blood":
+				resonance_effects = [{"type": "ap", "value": 2}]
+				text = "血契共鸣：石柱记住了你的血，荒原为你让路。AP +2。"
+			_:
+				resonance_effects = [{"type": "hp", "value": 1}]
+				text = "封印共鸣：石柱回应了你的选择。HP +1。"
+	else:
+		_checkpoint_resonance = "mixed"
+		resonance_effects = [{"type": "hp", "value": 1}]
+		text = "残响：三种誓约彼此抵消，封印勉强闭合。HP +1。"
+	var echo := _apply_effects(resonance_effects)
+	for message in echo.get("messages", []):
+		applied["messages"].append(String(message))
+	for entry in echo.get("rewards", []):
+		applied["rewards"].append(entry)
+	for entry in echo.get("costs", []):
+		applied["costs"].append(entry)
+	for entry in echo.get("insights", []):
+		applied["insights"].append(entry)
+	if bool(echo.get("death", false)):
+		applied["death"] = true
+	_checkpoint_resonance_text = text
+	applied["messages"].append(text)
+	applied["rewards"].append({
+		"text": text,
+		"kind": "seal",
+		"hint": "检查点选择改变了最终封印",
+	})
 
 
 ## ---------------- 效果结算 ----------------
