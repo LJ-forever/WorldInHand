@@ -1333,6 +1333,13 @@ func _test_game_scene() -> void:
 	var hud: Node = scene.get_node_or_null("UI")
 	_check(hud != null, "game scene has UI")
 	if hud != null:
+		var feedback_layer: Control = hud.get_node_or_null("FeedbackLayer")
+		_check(feedback_layer != null and feedback_layer.mouse_filter == Control.MOUSE_FILTER_IGNORE, "feedback layer exists and never blocks input")
+		if feedback_layer != null:
+			var hit_sound: AudioStreamWAV = feedback_layer._build_sfx("hit")
+			_check(hit_sound != null and hit_sound.data.size() > 1000, "feedback layer synthesizes hit audio without external assets")
+		var feedback_button: Button = hud.get_node_or_null("HelpButton")
+		_check(feedback_button != null and feedback_button.has_meta("feedback_bound"), "UI buttons are wired for press/rebound feedback")
 		var intro_overlay: Control = hud.get_node_or_null("IntroOverlay")
 		_check(intro_overlay != null and intro_overlay.visible, "intro overlay opens before the player may act")
 		_check(GameManager.intro_open, "intro state blocks gameplay input until dismissed")
@@ -2134,6 +2141,13 @@ func _test_fog_and_scouting() -> void:
 	_check(ap_before - player.ap_deci == GameManager.SCOUT_AP_COST_DECI, "scouting costs exactly 2 AP")
 	_check(String(report.get("level", "")) == "great_success", "high total produces a great success")
 	_check(int(report.get("radius", 0)) == base_scout_radius + 1, "great success adds one cell to the reduced reveal radius")
+	_check(String(report.get("buff_status", "")) == "scout_insight", "great success grants scout insight")
+	_check(player.has_status("scout_insight") and not player.has_status("scout_edge"), "insight replaces the lesser scout edge")
+	_check(
+		int(player.status_effects("scout_insight").get("combat", 0)) == 3
+			and int(player.status_effects("scout_insight").get("luck", 0)) == 2,
+		"scout insight grants +3 combat and +2 luck"
+	)
 	_check(int(report.get("cells_revealed", 0)) > 0, "scouting reveals multiple cells")
 	var scout_formula := String(report.get("formula", ""))
 	print("  scout formula: " + scout_formula)
@@ -2165,6 +2179,34 @@ func _test_fog_and_scouting() -> void:
 	_check(not GameManager.vision_boost_active(), "scout vision eventually returns to base")
 	_check(is_equal_approx(GameManager.vision_radius_world(), GameManager._base_vision_radius_world()), "boosted circle fully collapses back to base vision")
 	_check(EventManager.grant_ai_reveal(9) == GameManager.MAX_AI_REVEAL_LEVEL, "AI reveal level caps at 3")
+
+	# 普通成功：先机提供较弱的战斗/幸运加成，覆盖“不侦察也能走”的空白。
+	player.remove_status("scout_insight")
+	player.remove_status("scout_edge")
+	player.ap_deci = 100
+	player.attributes["perception"] = 0
+	var edge_dc := int(GameManager.scout_dc_info(player.cell_id, player)["dc"])
+	var fixed_parts := player.check_breakdown("perception")
+	var fixed_bonus := int(fixed_parts["base"]) + int(fixed_parts["equipment"]) + int(fixed_parts["status"])
+	player.attributes["perception"] = maxi(0, edge_dc + 1 - 7 - fixed_bonus)
+	_check(_seed_scout_natural(7), "seed a deterministic normal-success roll")
+	var edge_report := GameManager.scout()
+	_check(String(edge_report.get("level", "")) == "success", "adjusted perception produces a normal scouting success")
+	_check(String(edge_report.get("buff_status", "")) == "scout_edge", "normal success grants scout edge")
+	_check(player.has_status("scout_edge"), "scout edge is applied to the player")
+	_check(
+		int(player.status_effects("scout_edge").get("combat", 0)) == 2
+			and int(player.status_effects("scout_edge").get("luck", 0)) == 1,
+		"scout edge grants +2 combat and +1 luck"
+	)
+
+	# 之后的大成功会把先机升级为洞察，而不是让两个增益叠加。
+	player.attributes["perception"] = 20
+	player.ap_deci = 100
+	_check(_seed_scout_natural(7), "seed a deterministic upgrade roll")
+	var upgrade_report := GameManager.scout()
+	_check(String(upgrade_report.get("level", "")) == "great_success", "a later great success still resolves")
+	_check(player.has_status("scout_insight") and not player.has_status("scout_edge"), "great success upgrades scout edge to insight")
 
 	# 大失败：位置暴露 1 回合；骰子固定为 7，极低感知保证总值 ≤ DC-5。
 	player.attributes["perception"] = -100
@@ -2707,6 +2749,19 @@ func _test_combat_and_victory_tiers() -> void:
 	_check(CombatRules.defense_dc(attacker) == 14, "defense DC = 8 + stamina + equipment bonus")
 	_check(CombatRules.defense_dc(defender) == 10, "non-combat equipment does not inflate defense DC")
 	_check((attack.get("dice", []) as Array).size() == 2, "attack exposes both d6 for the panel")
+	attacker.ap_deci = CombatRules.AP_COST_DECI
+	var surprise_attack := CombatRules.resolve_attack(attacker, defender, rng, 3, "突袭")
+	_check(
+		int(surprise_attack.get("situational", 0)) == 3
+			and int(surprise_attack.get("total", 0)) == int(surprise_attack.get("natural", 0))
+				+ int(surprise_attack.get("base", 0)) + int(surprise_attack.get("equipment", 0))
+				+ int(surprise_attack.get("status", 0)) + 3,
+		"surprise attack adds +3 to the attack total"
+	)
+	_check(
+		CombatRules.attack_formula_text(surprise_attack).contains("突袭"),
+		"surprise modifier is labelled in the combat formula"
+	)
 	attacker.ap_deci = 5
 	var no_ap := CombatRules.resolve_attack(attacker, defender, rng)
 	_check(not bool(no_ap.get("ok", false)) and attacker.ap_deci == 5, "attack without 1 AP is rejected without mutation")
@@ -2757,10 +2812,73 @@ func _test_combat_and_victory_tiers() -> void:
 	_check(target.actor.hp < target_hp or not target.alive or target.actor.ap_deci < target_ap, "target loses HP or AP in the exchange")
 	_check(GameManager.state == GameManager.State.PLAYING, "auto-resolved player attack returns to PLAYING")
 
+	# 相邻即可袭击非敌对同伴：这一下是突袭（+3、无法反击），出手后强制敌对。
+	_check(_start_game("lin_xiao", configs[0]), "surprise attack test run starts")
+	EventManager.random_events_enabled = false
+	map = GameManager.map
+	player = GameManager.player
+	player.hp_max = 30
+	player.hp = 30
+	player.ap_deci = 100
+	var surprise_beside: int = map.neighbors_of(player.cell_id)[0]
+	var surprised := CompanionAI.new()
+	_check(surprised.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", surprise_beside, RNGManager.get_stream("ai")), "surprise attack target setup succeeds")
+	surprised.faction = "neutral"
+	surprised.favor = 0
+	surprised.actor.hp = surprised.actor.hp_max
+	surprised.actor.ap_deci = 100
+	GameManager.companion = surprised
+	_check(GameManager.attack_is_surprise(), "non-hostile adjacent target is flagged as a surprise attack")
+	_check(GameManager.can_attack_companion(), "adjacent non-hostile companion can be attacked")
+	var hit_events: Array[Dictionary] = []
+	var hit_listener := func(info: Dictionary) -> void:
+		hit_events.append(info)
+	GameManager.combat_hit.connect(hit_listener)
+	var surprise_result := GameManager.player_attack_companion()
+	GameManager.combat_hit.disconnect(hit_listener)
+	_check(bool(surprise_result.get("ok", false)) and bool(surprise_result.get("surprise", false)), "surprise attack resolves against a neutral companion")
+	_check(int((surprise_result.get("attack", {}) as Dictionary).get("situational", 0)) == 3, "surprise attack gains +3")
+	_check((surprise_result.get("counter", {}) as Dictionary).is_empty(), "surprised companion cannot counter the first strike")
+	_check(surprised.faction == "enemy", "attacking a non-hostile companion forces hostility")
+	_check(GameManager.state == GameManager.State.PLAYING, "auto-resolved surprise attack returns to PLAYING")
+	_check(hit_events.size() == 1, "player attack emits one combat_hit feedback event")
+	if not hit_events.is_empty():
+		var hit_info: Dictionary = hit_events[0]
+		var attack_result: Dictionary = surprise_result.get("attack", {})
+		_check(
+			String(hit_info.get("attacker_side", "")) == "player"
+				and String(hit_info.get("defender_side", "")) == "companion",
+			"combat_hit names the attacker and defender"
+		)
+		_check(
+			int(hit_info.get("damage", -1)) == int(attack_result.get("damage", -2))
+				and int(hit_info.get("combo", -1)) == int(surprise_result.get("combo", -2)),
+			"combat_hit carries the resolved damage and combo"
+		)
+
 	# 交互式状态机：面板等待选择，选择后显示结果，关闭后恢复行动。
 	_check(_start_game("lin_xiao", configs[0]), "interactive combat test run starts")
 	GameManager.combat_interactive = true
-	GameManager._handle_companion_combat({"lines": ["测试袭击"], "source": "companion"}, false)
+	GameManager.companion.actor.ap_deci = 100
+	var passive_hits: Array[Dictionary] = []
+	var passive_listener := func(info: Dictionary) -> void:
+		passive_hits.append(info)
+	GameManager.combat_hit.connect(passive_listener)
+	var passive_attack := CombatRules.resolve_attack(
+		GameManager.companion.actor, GameManager.player, RNGManager.get_stream("ai")
+	)
+	passive_attack["lines"] = ["测试袭击"]
+	passive_attack["source"] = "companion"
+	passive_attack["target"] = "player"
+	GameManager._handle_companion_combat(passive_attack, false)
+	GameManager.combat_hit.disconnect(passive_listener)
+	_check(passive_hits.size() == 1, "AI attack emits a combat_hit feedback event")
+	if not passive_hits.is_empty():
+		_check(
+			String(passive_hits[0].get("attacker_side", "")) == "companion"
+				and String(passive_hits[0].get("defender_side", "")) == "player",
+			"AI combat_hit names the companion as attacker"
+		)
 	_check(GameManager.state == GameManager.State.COMBAT, "combat prompt enters COMBAT state")
 	_check(bool(GameManager.combat_payload.get("show_choice", false)), "combat prompt offers counter/endure")
 	GameManager.resolve_combat_choice("endure")

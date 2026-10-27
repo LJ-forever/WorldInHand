@@ -1,6 +1,6 @@
-# 数据 Schema（v1.11）
+# 数据 Schema（v1.12）
 
-所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.11 把检查点从「踏足即激活」改为固定触发事件：`landmarks.json` 新增 `checkpoint_event_id`，事件 DSL 的 `trigger` 与 `resolution` 均新增 `checkpoint`，选项用 `params.path` / `params.path_name` 记录誓约；集齐全部检查点后按所选誓约给出不同最终共鸣。地标悬停只保留名称、距离与激活状态，商店/旅店/检查点的完整内容改在进入后的全屏子页面中展示。`save_version` 仍为 1，存档新增 `discovered_pois` / `checkpoint_paths` / `checkpoint_resonance` / `checkpoint_resonance_text`，`game_version` 升到 `1.11`。v1.10 新增第 8 张内容表 `landmarks.json`（检查点 / 商店 / 旅店），地图配置新增 `landmark_counts`；事件 DSL 的 `trigger` 新增 `facility`，`resolution` 新增 `inn`，交易列表新增 `sell`；固定设施事件由进入地标格直接触发，不占随机事件预算。终点封印改为「激活全部检查点」，无检查点的旧地图回退为「踏足 3 处 POI」。`game_version` 升到 `1.10`，`save_version` 仍为 1；地标位置由地图配置与种子确定性重建，不写入存档。v1.9 无新增/改名内容 JSON 字段，但新增效果类型 `goal_guard_suppress`（退开守卫），运行时与存档新增 `goal_guard_suppressed_round` / `goal_fail_streak` / `goal_withdraw_count` / `theft_warning_given`，`game_version` 升到 `1.9`、`save_version` 仍为 1；青蘅 `negotiation` 3 → 4；`goal_guard` 的 `sacrifice_item` 由自动通过改为消耗物品 + 交涉 DC 13（稀有度 +1/+2/+3），`withdraw` 增加每局 2 次上限与本回合压制。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
+所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.12 在 `statuses.json` 新增两个玩家专属增益 `scout_edge`（战斗 +2、幸运 +1，3 回合）与 `scout_insight`（战斗 +3、幸运 +2，3 回合），由侦察成功/大成功施加，沿用既有状态结构与存档格式；`game_version` 升到 `1.12`，`save_version` 仍为 1。v1.11 把检查点从「踏足即激活」改为固定触发事件：`landmarks.json` 新增 `checkpoint_event_id`，事件 DSL 的 `trigger` 与 `resolution` 均新增 `checkpoint`，选项用 `params.path` / `params.path_name` 记录誓约；集齐全部检查点后按所选誓约给出不同最终共鸣。地标悬停只保留名称、距离与激活状态，商店/旅店/检查点的完整内容改在进入后的全屏子页面中展示。`save_version` 仍为 1，存档新增 `discovered_pois` / `checkpoint_paths` / `checkpoint_resonance` / `checkpoint_resonance_text`，`game_version` 升到 `1.11`。v1.10 新增第 8 张内容表 `landmarks.json`（检查点 / 商店 / 旅店），地图配置新增 `landmark_counts`；事件 DSL 的 `trigger` 新增 `facility`，`resolution` 新增 `inn`，交易列表新增 `sell`；固定设施事件由进入地标格直接触发，不占随机事件预算。终点封印改为「激活全部检查点」，无检查点的旧地图回退为「踏足 3 处 POI」。`game_version` 升到 `1.10`，`save_version` 仍为 1；地标位置由地图配置与种子确定性重建，不写入存档。v1.9 无新增/改名内容 JSON 字段，但新增效果类型 `goal_guard_suppress`（退开守卫），运行时与存档新增 `goal_guard_suppressed_round` / `goal_fail_streak` / `goal_withdraw_count` / `theft_warning_given`，`game_version` 升到 `1.9`、`save_version` 仍为 1；青蘅 `negotiation` 3 → 4；`goal_guard` 的 `sacrifice_item` 由自动通过改为消耗物品 + 交涉 DC 13（稀有度 +1/+2/+3），`withdraw` 增加每局 2 次上限与本回合压制。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
 
 ## 0. 通用约定
 
@@ -24,7 +24,7 @@
 |---|---|---|---|
 | `characters.json` | `characters` | 5 | v0.1 |
 | `items.json` | `items` | 12 | v0.1 |
-| `statuses.json` | `statuses` | 11 | v0.5 |
+| `statuses.json` | `statuses` | 13 | v1.12 |
 | `flags.json` | `flags` | 5 | v0.1 |
 | `terrains.json` | `terrains` | 11 | v0.1 |
 | `hidden_tasks.json` | `hidden_tasks` | 15（MVP 10） | v0.1 |
@@ -114,6 +114,8 @@
 `effects` 常用键：`hp_per_round`、`scout_check_bonus`、`ap_next_round`、`ap_penalty_overflow_to_hp`、`blocks_movement`、`blocks_goal`、`end_of_round_check{attr,dc}`、`luck`、`negotiation`、`combat`、`perception`、`immune_terrain_negative`。
 
 `lost` 与 `lost_severe` 是事件「迷路」的两种 AP 惩罚：下回合掷 AP 后分别扣 2 AP / 4 AP，不足按 D-10 转 HP；`added_round` 保证获得状态的当回合不结算，`ap_applied` 保证只扣一次。`duration=1` 的状态在下一回合结束时移除。HUD 状态条优先读取 `short`；缺失时回退到 `description`，保证旧状态定义仍可用。
+
+`scout_edge` 与 `scout_insight` 是 v1.12 的侦察回报：`GameManager.scout()` 普通成功施加 `scout_edge`，大成功先移除 `scout_edge` 再施加 `scout_insight`；重复成功用既有 `add_status()` 刷新持续时间。两者 `player_only = true`、`max_duration = 3`、`removable_by_potion = false`，其 `combat` / `luck` 加值由 `ActorState.status_check_parts()` 自动计入攻击与事件检定公式，不需要新增代码分支。
 
 ---
 
@@ -222,9 +224,10 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 | 项目 | 口径 |
 |---|---|
 | 攻击成本 | 每次主动攻击/反击消耗 1 AP（10 deci-AP） |
-| 攻击检定 | `2d6 + 战斗 + 装备战斗加值 + 状态修正` 对抗 `8 + 体力 + 装备防御加值` |
+| 攻击检定 | `2d6 + 战斗 + 装备战斗加值 + 状态修正 + 情境加值` 对抗 `8 + 体力 + 装备防御加值` |
+| 突袭 | 目标 `faction != "enemy"` 时，玩家主动袭击获得 `situational = 3`（公式标注「突袭」）；该次目标不反击；无论命中与否，结算时 `force_hostile()` 把目标设为 `faction = "enemy"`、`favor <= -3` |
 | 伤害 | 大成功 1d6，成功 1d3；失败攻击者额外 −1 AP（不足转 HP），大失败攻击者再 −1 HP |
-| 反击 | AI 袭击后玩家可花 1 AP 反击；该 AI 本回合已经出手，反击后不再顺势攻击。玩家先手后，存活且 AP ≥1 的敌方同伴会立刻反击一次；任一方都不会因反击再次连锁 |
+| 反击 | AI 袭击后玩家可花 1 AP 反击；该 AI 本回合已经出手，反击后不再顺势攻击。玩家先手后，存活且 AP ≥1 的**已敌对**同伴会立刻反击一次；突袭当次不反击。任一方都不会因反击再次连锁 |
 | 战斗状态 | `GameManager.State.COMBAT`；`combat_payload` 含 `lines / show_choice / counter_enabled / stage`，UI 关闭后回到 `PLAYING` |
 | 终点封印 | 普通游玩必须先激活地图上的全部检查点（`landmarks.json` 中 `counts_for_seal = true` 的地标）；没有检查点的旧地图回退为踏足 3 处不同 POI（`EventManager.GOAL_SEAL_POI_COUNT = 3`）；`random_events_enabled = false` 的调试/测试模式不启用。封印未解时移动停在终点格外，标记吸回当前格 |
 | 到达记录 | `GameManager.goal_arrivals` 记录 `{actor, name, round, faction_at_arrival, rewarded}`；每角色只记第一次 |
@@ -530,11 +533,12 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 - 高低差修正：目标格 `elevation >= 3` 时 DC −2；`elevation <= 1` 时 DC +2；`acrophobia` 在高处把 −2 抵消为 0。
 - 大成功：自然 12 或总值 ≥ DC + 5；大失败：自然 2 或总值 ≤ DC − 5。
 - 成功扩张 = `max(1, effective_perception() // 2 + 1)` 格（只计状态里的真实感知变化，`poisoned` 的 `scout_check_bonus: -1` 只影响检定）；把该值换算为 `vision_boost_cells` 后扩大圆形视野。大成功再 +1，并把最近一个未探索 POI 标为已知。
-- 扩张视野**保持 2 回合**，之后每回合结束收缩 **0.5 格**，直到回到基础圆；收缩过程平滑动画显示。
+- 成功同时施加 `scout_edge`（战斗 +2、幸运 +1，3 回合）；大成功先移除 `scout_edge`，再施加 `scout_insight`（战斗 +3、幸运 +2，3 回合）。重复成功刷新持续时间，大成功不会让两个增益叠加。
+- 扩张视野**保持 2 回合**，之后每回合结束收缩 **0.5 格**，直到回到基础圆；收缩过程平滑动画显示。视野保持与先机/洞察的 3 回合持续时间相互独立。
 - 侦察成功使 AI 揭示等级 +1，上限 3；大失败使玩家位置对所有 AI 暴露到下一回合结束。
 - 起始格、终点与固定设施（检查点 / 商店 / 旅店）标记始终可见；普通 POI 标记只在位置已知（进入、侦察大成功或事件揭示）后绘制，并按可见/记忆状态区分亮度。
 
-详见 `docs/实现决策记录.md` D-23/D-24/D-54（修订）。
+详见 `docs/实现决策记录.md` D-23/D-24/D-54（修订）/D-72。
 
 ### 9.3 自动存档 JSON（save_version 1）
 
@@ -544,7 +548,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 {
   "format": "zhenming.save",
   "save_version": 1,
-  "game_version": "1.11",
+  "game_version": "1.12",
   "saved_at": "2026-10-26T12:34:56",
   "meta": { "map_id": "borderland", "player_name": "林鸮", "round": 5, "...": "..." },
   "map": {
@@ -574,7 +578,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 |---|---|---|
 | `format` | 字符串 | 固定 `zhenming.save`；不匹配直接拒绝 |
 | `save_version` | 整数 | 当前为 `1`；结构不兼容时递增，读档不接受跨版本 |
-| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.11`，仅用于显示与排查 |
+| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.12`，仅用于显示与排查 |
 | `saved_at` | 字符串 | 本地时间 `YYYY-MM-DDTHH:MM:SS`；`meta.saved_at` 同值 |
 | `meta` | 对象 | 主菜单用摘要：地图/角色/回合/HP/金币/终点距离/同伴名，不含完整状态 |
 | `map.config` | 对象 | 本局实际生效的完整地图配置（含兜底后的参数），不是只存 `seed` |

@@ -122,6 +122,11 @@ func _world_to_screen(point: Vector2) -> Vector2:
 	return point * _zoom + _pan
 
 
+## 表现层用：把世界坐标换算成屏幕坐标，以便在角色/同伴位置播放命中特效。
+func world_to_screen(point: Vector2) -> Vector2:
+	return _world_to_screen(point)
+
+
 func _clamp_pan() -> void:
 	var map := GameManager.map
 	if map == null:

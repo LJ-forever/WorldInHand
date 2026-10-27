@@ -29,6 +29,9 @@ signal world_notice(text: String)
 signal combat_started(payload: Dictionary)
 signal combat_updated(payload: Dictionary)
 signal combat_finished(payload: Dictionary)
+## 单次攻击的结构化结果，供表现层播放命中特效、伤害数字、震屏与音效。
+## 只描述已经结算完成的事实，不改变任何规则。
+signal combat_hit(info: Dictionary)
 signal game_over(win: bool, reason: String)
 
 enum State { BOOT, TITLE, MAP_SELECT, CHARACTER_SELECT, PLAYING, EVENT, COMBAT, GAME_OVER }
@@ -136,6 +139,10 @@ var _combat_stage: String = ""
 var _combat_context: Dictionary = {}
 var _pending_end_turn_after_combat: bool = false
 var _goal_victory_resolved: bool = false
+## 连续命中的纯表现计数：不提供数值加成，只用于连击提示与音效。
+## 跨回合保留，但超过 1 回合没有新命中就中断。
+var player_combo: int = 0
+var _player_combo_round: int = 0
 
 
 func _ready() -> void:
@@ -218,6 +225,8 @@ func start_new_game(player_id: String, map_config: Dictionary = {}) -> bool:
 	_combat_context.clear()
 	_pending_end_turn_after_combat = false
 	_goal_victory_resolved = false
+	player_combo = 0
+	_player_combo_round = 0
 	pending_item_overflows.clear()
 	companion = CompanionAI.new()
 	companion_start_cell_id = _pick_companion_start(map, map.start_id)
@@ -638,10 +647,12 @@ func _handle_companion_combat(combat: Dictionary, defer_end_turn: bool) -> void:
 	if player == null:
 		return
 	var lines: Array = combat.get("lines", [])
+	# 先播放命中反馈，再判负；否则致命一击会被结算页直接盖掉，玩家看不到伤害来源。
+	_emit_combat_dice("%s的袭击" % companion_name(), companion_name(), player.display_name, combat)
+	_emit_combat_hit("companion", "player", combat, 0)
 	if player.hp <= 0:
 		_finish(false, "%s的袭击击倒了你。" % companion_name())
 		return
-	_emit_combat_dice("%s的袭击" % companion_name(), companion_name(), player.display_name, combat)
 	_combat_context = {
 		"ai_attack": combat.duplicate(true),
 		# AI 的袭击已经用掉了它本回合的出手；玩家反击时它不能再顺势多打一次。
@@ -689,10 +700,6 @@ func attack_block_reason() -> String:
 		return "当前没有可袭击的目标"
 	if not companion.alive:
 		return "同伴已经倒下"
-	if companion.faction == "friendly":
-		return "关系为「友好」：袭击盟友会立刻转为敌对，且无法带来胜利优势"
-	if companion.faction != "enemy":
-		return "关系为「中立」：她尚未与你为敌；先观察，或通过事件让立场改变"
 	if player.ap_deci < CombatRules.AP_COST_DECI:
 		return "AP 不足 1 点（当前 %.1f）" % (player.ap_deci / 10.0)
 	var distance := map.graph_distance(player.cell_id, companion.actor.cell_id)
@@ -703,26 +710,52 @@ func attack_block_reason() -> String:
 	return ""
 
 
-## 玩家主动袭击敌方同伴：先手 1 AP，随后同伴若存活且为敌方会消耗 1 AP 反击。
+## 当前袭击是否会构成突袭（目标尚未与你敌对）。HUD 用它切换按钮文案。
+func attack_is_surprise() -> bool:
+	return companion != null and companion.alive and companion.faction != "enemy"
+
+
+## 玩家主动袭击：相邻即可出手，不再要求目标先转为敌对。
+## 对非敌对目标是突袭：命中 +3，且她这一下来不及反击；无论是否命中，
+## 出手后都会强制转为敌对。对已敌对目标则按旧规则，她可能立刻反击。
 func player_attack_companion() -> Dictionary:
 	if not can_attack_companion():
 		return {"ok": false, "error": "当前无法袭击同伴。"}
-	var attack := CombatRules.resolve_attack(player, companion.actor, RNGManager.get_stream("event"))
-	_emit_combat_dice("你的袭击", player.display_name, companion_name(), attack)
-	var lines := CombatRules.describe_attack(attack, player.display_name, companion_name())
+	var surprise := attack_is_surprise()
+	var situational := 3 if surprise else 0
+	var attack := CombatRules.resolve_attack(
+		player, companion.actor, RNGManager.get_stream("event"),
+		situational, "突袭" if surprise else ""
+	)
+	_emit_combat_dice("你的突袭" if surprise else "你的袭击", player.display_name, companion_name(), attack)
+	var combo := _register_player_attack_result(attack)
+	_emit_combat_hit("player", "companion", attack, combo)
+	var lines: Array[String] = []
+	if surprise:
+		lines.append("她尚未与你为敌。你抓准空当突袭：命中 +3，且她来不及反击。")
+	lines.append_array(CombatRules.describe_attack(attack, player.display_name, companion_name()))
 	var counter: Dictionary = {}
+	var faction_report: Dictionary = {}
+	if surprise:
+		faction_report = companion.force_hostile()
+		companion_changed.emit()
+		lines.append("")
+		lines.append("她遭你袭击，关系立刻转为「敌对」。")
 	if companion.actor.hp <= 0:
 		mark_companion_dead("被你击倒")
-	elif companion.faction == "enemy" and companion.actor.ap_deci >= CombatRules.AP_COST_DECI:
+	elif not surprise and companion.faction == "enemy" and companion.actor.ap_deci >= CombatRules.AP_COST_DECI:
 		counter = CombatRules.resolve_attack(companion.actor, player, RNGManager.get_stream("ai"))
+		_emit_combat_hit("companion", "player", counter, 0)
 		lines.append("")
 		lines.append_array(CombatRules.describe_attack(counter, companion_name(), player.display_name))
+	elif surprise:
+		lines.append("她被这一下打乱阵脚，这一回合无法反击。")
 	var death := player.hp <= 0
 	_combat_context = {"player_attack": attack}
 	_combat_stage = "resolved"
 	combat_payload = {
-		"title": "主动袭击",
-		"meta": "你向%s出手" % companion_name(),
+		"title": "主动突袭" if surprise else "主动袭击",
+		"meta": ("你从侧后突袭%s" % companion_name()) if surprise else ("你向%s出手" % companion_name()),
 		"lines": lines,
 		"stage": "resolved",
 		"show_choice": false,
@@ -733,6 +766,8 @@ func player_attack_companion() -> Dictionary:
 	combat_started.emit(combat_payload)
 	if death:
 		_add_world_log("%s在反击中击倒了你。" % companion_name())
+	elif surprise and companion.alive:
+		_add_world_log("%s遭到你的突袭，与你转为敌对。" % companion_name())
 	else:
 		_add_world_log("你与%s交了一次手。" % companion_name())
 	if not combat_interactive:
@@ -742,8 +777,45 @@ func player_attack_companion() -> Dictionary:
 		"attack": attack,
 		"counter": counter,
 		"death": death,
+		"surprise": surprise,
+		"faction_report": faction_report,
+		"combo": combo,
 		"payload": combat_payload.duplicate(true),
 	}
+
+
+## 连续命中只用于表现层提示；跨回合保留 1 回合，中断后归零。
+func _register_player_attack_result(result: Dictionary) -> int:
+	if not bool(result.get("ok", false)) or int(result.get("damage", 0)) <= 0:
+		player_combo = 0
+		return 0
+	if player_combo > 0 and round_index - _player_combo_round > 1:
+		player_combo = 0
+	player_combo += 1
+	_player_combo_round = round_index
+	return player_combo
+
+
+func _break_player_combo() -> void:
+	player_combo = 0
+
+
+## 将攻击结果转成表现层事件；伤害、暴击、攻击方与目标都来自实际结算。
+func _emit_combat_hit(attacker_side: String, defender_side: String, result: Dictionary, combo: int) -> void:
+	if not bool(result.get("ok", false)):
+		return
+	if defender_side == "player" and int(result.get("damage", 0)) > 0:
+		_break_player_combo()
+	combat_hit.emit({
+		"attacker_side": attacker_side,
+		"defender_side": defender_side,
+		"damage": int(result.get("damage", 0)),
+		"level": String(result.get("level", "")),
+		"level_name": String(result.get("level_name", "")),
+		"critical": String(result.get("level", "")) == "great_success",
+		"combo": combo,
+		"defender_name": String(result.get("defender", "")),
+	})
 
 
 func _emit_combat_dice(title: String, attacker_name: String, defender_name: String, result: Dictionary) -> void:
@@ -785,8 +857,10 @@ func _resolve_combat_choice_internal(choice_id: String) -> Dictionary:
 	var lines: Array = ai_attack.get("lines", [])
 	var counter: Dictionary = {}
 	var ai_counter: Dictionary = {}
+	var counter_combo := 0
 	if choice_id == "counter" and player.ap_deci >= CombatRules.AP_COST_DECI and companion != null and companion.alive:
 		counter = CombatRules.resolve_attack(player, companion.actor, RNGManager.get_stream("event"))
+		counter_combo = _register_player_attack_result(counter)
 		lines.append("")
 		lines.append("你消耗 1 AP 反击。")
 		lines.append_array(CombatRules.describe_attack(counter, player.display_name, companion_name()))
@@ -796,6 +870,7 @@ func _resolve_combat_choice_internal(choice_id: String) -> Dictionary:
 				and companion.faction == "enemy" \
 				and companion.actor.ap_deci >= CombatRules.AP_COST_DECI:
 			ai_counter = CombatRules.resolve_attack(companion.actor, player, RNGManager.get_stream("ai"))
+			_emit_combat_hit("companion", "player", ai_counter, 0)
 			lines.append("")
 			lines.append("%s顺势反击。" % companion_name())
 			lines.append_array(CombatRules.describe_attack(ai_counter, companion_name(), player.display_name))
@@ -806,6 +881,7 @@ func _resolve_combat_choice_internal(choice_id: String) -> Dictionary:
 			lines.append("你没有反击，任由这一击落在身上。")
 	if not counter.is_empty():
 		_emit_combat_dice("你的反击", player.display_name, companion_name(), counter)
+		_emit_combat_hit("player", "companion", counter, counter_combo)
 	var death := player.hp <= 0
 	_combat_stage = "resolved"
 	combat_payload = {
@@ -2122,6 +2198,8 @@ func scout() -> Dictionary:
 	var vision_radius := 0.0
 	var poi_cell := -1
 	var ai_level := EventManager.get_reveal_level()
+	var buff_status := ""
+	var buff_name := ""
 
 	if level == "success" or level == "great_success":
 		radius = player.scout_reveal_radius()
@@ -2134,12 +2212,32 @@ func scout() -> Dictionary:
 		refresh_vision()
 		ai_level = EventManager.grant_ai_reveal(1)
 		messages.append("侦察成功：视野向外扩张 %d 格，保持 %d 回合。" % [radius, SCOUT_VISION_HOLD_ROUNDS])
+		# 侦察先机把「看见」转成下一场交手的实际优势；大成功升级为洞察。
 		if level == "great_success":
+			player.remove_status("scout_edge")
+			player.add_status("scout_insight", 3, round_index)
+			buff_status = "scout_insight"
+			buff_name = "侦察洞察"
+			messages.append("获得「侦察洞察」：战斗 +3、幸运 +2，持续 3 回合。")
 			poi_cell = EventManager.reveal_nearest_poi_for_scout()
 			if poi_cell >= 0:
 				messages.append("大成功：额外定位最近 POI（地块 %d）。" % (poi_cell + 1))
 			else:
 				messages.append("大成功：附近已没有未探索的 POI。")
+		else:
+			if player.has_status("scout_insight"):
+				player.add_status("scout_insight", 3, round_index)
+				buff_status = "scout_insight"
+				buff_name = "侦察洞察"
+			else:
+				player.add_status("scout_edge", 3, round_index)
+				buff_status = "scout_edge"
+				buff_name = "侦察先机"
+			messages.append("获得「%s」：战斗 +%d、幸运 +%d，持续 3 回合。" % [
+				buff_name,
+				int(player.status_effects(buff_status).get("combat", 0)),
+				int(player.status_effects(buff_status).get("luck", 0)),
+			])
 	elif level == "great_fail":
 		position_exposed_until_round = round_index + 1
 		messages.append("大失败：你的位置暴露给所有 AI，持续 1 回合。")
@@ -2170,6 +2268,8 @@ func scout() -> Dictionary:
 		"cells_revealed": revealed.size(),
 		"poi_cell": poi_cell,
 		"ai_reveal_level": ai_level,
+		"buff_status": buff_status,
+		"buff_name": buff_name,
 		"exposed": level == "great_fail",
 		"ap_deci": player.ap_deci,
 	}
@@ -2573,6 +2673,8 @@ func _restore_runtime_clean_state() -> void:
 	_combat_context.clear()
 	_pending_end_turn_after_combat = false
 	_goal_victory_resolved = false
+	player_combo = 0
+	_player_combo_round = 0
 	last_path_error = ""
 
 

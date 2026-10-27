@@ -8,7 +8,7 @@ extends CanvasLayer
 ## - 左上：光标地块的地形与迷雾状态；
 ## - 左下：旅途纪事。长提示不再堆在底栏，统一收进分页手册。
 
-const ATTACK_HELP := "袭击的用途：只有同伴与你相邻且关系为「敌对」时才能出手。\n消耗 1 AP 先手攻击：2d6 + 战斗 + 装备/状态 对抗 8 + 体力 + 防御装备。\n命中造成 1d3（大成功 1d6）。她若存活且还有 1 AP，会立刻反击。\n击倒或削弱她能阻止她抢先抵达终点、偷你的装备或给你下套。"
+const ATTACK_HELP := "袭击的用法：同伴与你相邻即可出手，不再要求她先敌对。\n消耗 1 AP：2d6 + 战斗 + 装备/状态 对抗 8 + 体力 + 防御装备。\n若她尚未敌对，这次视为「突袭」：命中 +3，且她这一下无法反击；无论是否命中，袭击后关系都会转为「敌对」。\n命中造成 1d3（大成功 1d6）；已敌对时她若存活且还有 1 AP，会立刻反击。\n击倒或削弱她能阻止她抢先抵达终点、偷你的装备或给你下套。"
 const CHRONICLE_TOP_EXPANDED := -410.0
 const CHRONICLE_TOP_COLLAPSED := -238.0
 
@@ -119,7 +119,7 @@ func _ready() -> void:
 	help_overlay.closed.connect(_on_modal_closed)
 	backpack_overlay.closed.connect(_on_modal_closed)
 
-	scout_button.tooltip_text = "消耗 2 AP：2d6 + 感知 + 装备/状态，对抗地形 DC。\n成功扩大圆形视野；大成功额外定位 POI；大失败会暴露你的位置 1 回合。"
+	scout_button.tooltip_text = "消耗 2 AP：2d6 + 感知 + 装备/状态，对抗地形 DC。\n成功：扩大圆形视野 3 回合，并获得「侦察先机」（战斗 +2、幸运 +1，3 回合）。\n大成功：额外定位 POI，升级为「侦察洞察」（战斗 +3、幸运 +2，3 回合）。\n大失败：暴露位置 1 回合。\n先机/洞察会直接加成之后的攻击与事件检定。"
 	rest_button.tooltip_text = "每回合一次：不消耗 AP，回复 1 HP。"
 	move_button.tooltip_text = "沿你画出的路径移动。空格键同效；AP 按实际走过的距离连续消耗，可在当前地块内来回移动。"
 	backpack_button.tooltip_text = "打开行囊与装备页：左侧装备、右侧背包，悬停看详情，拖拽装备（B）。"
@@ -526,7 +526,7 @@ func _update_companion_strip(companion_name: String) -> void:
 		]
 	var attack_reason := GameManager.attack_block_reason()
 	if attack_reason.is_empty():
-		companion_activity.text += " · 可袭击（1 AP）"
+		companion_activity.text += " · 可突袭（1 AP）" if GameManager.attack_is_surprise() else " · 可袭击（1 AP）"
 		companion_activity.add_theme_color_override("font_color", Color(0.95, 0.66, 0.48))
 	else:
 		companion_activity.add_theme_color_override("font_color", Color(0.65, 0.69, 0.61))
@@ -662,12 +662,17 @@ func _update_buttons() -> void:
 
 	var attack_reason := GameManager.attack_block_reason()
 	if attack_reason.is_empty():
-		attack_button.text = "袭击（1 AP · 可发动）"
+		attack_button.text = "袭击（突袭 +3 · 1 AP）" if GameManager.attack_is_surprise() else "袭击（1 AP · 可发动）"
 	else:
 		attack_button.text = "袭击（%s）" % _short_attack_reason(attack_reason)
-	attack_button.tooltip_text = ATTACK_HELP + "\n\n当前：" + (
-		"她与你相邻且敌对，可以出手。" if attack_reason.is_empty() else attack_reason
-	)
+	if attack_reason.is_empty():
+		attack_button.tooltip_text = ATTACK_HELP + "\n\n当前：" + (
+			"她尚未敌对：这次是突袭（命中 +3），她不会立刻反击；出手后关系转为敌对。"
+			if GameManager.attack_is_surprise()
+			else "她与你相邻且已敌对，可以出手；她若还有 1 AP 可能反击。"
+		)
+	else:
+		attack_button.tooltip_text = ATTACK_HELP + "\n\n当前：" + attack_reason
 
 
 func _short_attack_reason(reason: String) -> String:

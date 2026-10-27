@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/game/map_view.gd" id="1_map"]
 [ext_resource type="Script" path="res://scripts/game/hud.gd" id="2_hud"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/game/help_overlay.tscn" id="6_help"]
 [ext_resource type="PackedScene" path="res://scenes/game/backpack_overlay.tscn" id="7_backpack"]
 [ext_resource type="PackedScene" path="res://scenes/game/dice_overlay.tscn" id="8_dice"]
+[ext_resource type="Script" path="res://scripts/game/feedback_layer.gd" id="9_feedback"]
 
 [node name="Game" type="Node2D"]
 
@@ -557,3 +558,13 @@ text = "返回主界面"
 [node name="HelpOverlay" parent="UI" instance=ExtResource("6_help")]
 
 [node name="IntroOverlay" parent="UI" instance=ExtResource("5_intro")]
+
+[node name="FeedbackLayer" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("9_feedback")

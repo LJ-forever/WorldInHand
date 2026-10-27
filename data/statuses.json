@@ -162,6 +162,36 @@
       "player_only": false,
       "description": "战斗 -1，每回合 -1 HP；持续 2 回合。",
       "short": "战斗 -1，每回合 -1 HP"
+    },
+    {
+      "id": "scout_edge",
+      "name": "侦察先机",
+      "category": "buff",
+      "duration": 3,
+      "max_duration": 3,
+      "effects": {
+        "combat": 2,
+        "luck": 1
+      },
+      "removable_by_potion": false,
+      "player_only": true,
+      "description": "侦察成功带来的先手优势：战斗 +2、幸运 +1，持续 3 回合。再次侦察成功会刷新。",
+      "short": "战斗 +2，幸运 +1"
+    },
+    {
+      "id": "scout_insight",
+      "name": "侦察洞察",
+      "category": "buff",
+      "duration": 3,
+      "max_duration": 3,
+      "effects": {
+        "combat": 3,
+        "luck": 2
+      },
+      "removable_by_potion": false,
+      "player_only": true,
+      "description": "侦察大成功带来的完整洞察：战斗 +3、幸运 +2，持续 3 回合。再次大成功会刷新。",
+      "short": "战斗 +3，幸运 +2"
     }
   ]
 }

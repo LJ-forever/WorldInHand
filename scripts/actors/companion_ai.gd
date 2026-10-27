@@ -1218,6 +1218,23 @@ func change_favor(delta: int) -> Dictionary:
 	return _change_favor(delta)
 
 
+## 玩家主动袭击非敌对同伴后，无论检定是否命中都强制转为敌对。
+## 好感同步压到敌对阈值，避免下一回合又因数值判定跳回中立。
+func force_hostile() -> Dictionary:
+	var before_faction := faction
+	var before_favor := favor
+	faction = "enemy"
+	favor = mini(favor, -3)
+	return {
+		"faction_before": before_faction,
+		"faction": faction,
+		"faction_changed": faction != before_faction,
+		"favor_before": before_favor,
+		"favor": favor,
+		"favor_changed": favor != before_favor,
+	}
+
+
 func _change_favor(delta: int) -> Dictionary:
 	var before_faction := faction
 	var before_favor := favor

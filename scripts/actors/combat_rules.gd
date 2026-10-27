@@ -40,6 +40,9 @@ static func attack_formula_text(result: Dictionary) -> String:
 		text = ActorState.append_bonus_term(text, int(part.get("value", 0)), String(part.get("name", "装备")))
 	for part in result.get("status_parts", []):
 		text = ActorState.append_bonus_term(text, int(part.get("value", 0)), String(part.get("name", "状态")))
+	var situational := int(result.get("situational", 0))
+	if situational != 0:
+		text = ActorState.append_bonus_term(text, situational, String(result.get("situational_label", "突袭")))
 	var dc_text := String(result.get("dc_text", "DC %d" % int(result.get("dc", 0))))
 	return "%s = %d vs %s · %s" % [
 		text, int(result.get("total", 0)), dc_text, String(result.get("level_name", "")),
@@ -47,7 +50,15 @@ static func attack_formula_text(result: Dictionary) -> String:
 
 
 ## 结算一次攻击；调用前无需手动扣 AP。返回结构同时供 UI 与测试读取。
-static func resolve_attack(attacker, defender, rng: RandomNumberGenerator) -> Dictionary:
+## situational 是本次攻击的情境加值（例如对非敌对目标的突袭 +3），
+## 单独记账，避免和角色属性、装备、状态混在一起。
+static func resolve_attack(
+		attacker,
+		defender,
+		rng: RandomNumberGenerator,
+		situational: int = 0,
+		situational_label: String = ""
+	) -> Dictionary:
 	var result := {
 		"ok": false,
 		"attacker": attacker.display_name if attacker != null else "",
@@ -57,6 +68,8 @@ static func resolve_attack(attacker, defender, rng: RandomNumberGenerator) -> Di
 		"base": 0,
 		"equipment": 0,
 		"status": 0,
+		"situational": situational,
+		"situational_label": situational_label,
 		"equipment_parts": [],
 		"status_parts": [],
 		"total": 0,
@@ -92,7 +105,7 @@ static func resolve_attack(attacker, defender, rng: RandomNumberGenerator) -> Di
 	var status_parts: Array[Dictionary] = attacker.status_check_parts("combat")
 	var equipment: int = attacker.equipment_check_bonus("combat")
 	var status: int = attacker.status_check_modifier("combat")
-	var total: int = natural + base + equipment + status
+	var total: int = natural + base + equipment + status + situational
 	var dc := defense_dc(defender)
 	var dc_text := defense_dc_text(defender)
 	var level := "fail"

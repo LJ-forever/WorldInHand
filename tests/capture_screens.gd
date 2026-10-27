@@ -199,8 +199,13 @@ func _capture_combat_flow() -> void:
 	player.ap_deci = 100
 	var attack := CombatRules.resolve_attack(companion.actor, player, RNGManager.get_stream("ai"))
 	var lines := CombatRules.describe_attack(attack, GameManager.companion_name(), player.display_name)
+	# 带上完整结算结果，截图才能同时覆盖命中特效、伤害数字与战斗面板。
+	var combat_payload := attack.duplicate(true)
+	combat_payload["lines"] = lines
+	combat_payload["source"] = "companion"
+	combat_payload["target"] = "player"
 	GameManager.combat_interactive = true
-	GameManager._handle_companion_combat({"lines": lines, "source": "companion"}, false)
+	GameManager._handle_companion_combat(combat_payload, false)
 	await _wait_frames(3)
 	await _save_capture("04g_combat_choice.png")
 	GameManager.resolve_combat_choice("endure")
