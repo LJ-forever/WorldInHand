@@ -659,7 +659,7 @@
         },
         {
           "id": "withdraw",
-          "text": "退开",
+          "text": "退开（每局最多 2 次）",
           "check": null,
           "resolution": "check",
           "ai_allowed": false,
@@ -670,16 +670,22 @@
                   "type": "move",
                   "kind": "knockback",
                   "value": 1
+                },
+                {
+                  "type": "goal_guard_suppress"
                 }
               ],
-              "note": "不检定、不损失 HP；退回 1 格。可补给后再来，或改走其他路线。"
+              "note": "不检定、不损失 HP；退回 1 格。守卫本回合不会再出现，但终点入口封闭到下一回合。本局最多成功退开 2 次。"
             }
           }
         },
         {
           "id": "sacrifice_item",
           "text": "使用物品",
-          "check": null,
+          "check": {
+            "attr": "negotiation",
+            "dc": 13
+          },
           "resolution": "item_sacrifice",
           "params": {
             "allow_types": [
@@ -690,7 +696,11 @@
             "exclude_quest_items": true,
             "consume_count": 1,
             "requires_any_item": true,
-            "guard_leaves": true
+            "rarity_bonus": {
+              "common": 1,
+              "uncommon": 2,
+              "rare": 3
+            }
           },
           "ai_allowed": false,
           "outcomes": {
@@ -700,7 +710,43 @@
                   "type": "enter_goal"
                 }
               ],
-              "note": "不消耗 AP；守卫本局永久离开；AI 不能选择此选项。"
+              "note": "守卫收下祭品，侧身让开了通往终点的路。"
+            },
+            "great_success": {
+              "effects": [
+                {
+                  "type": "enter_goal"
+                }
+              ],
+              "note": "守卫掂了掂祭品，满意地退到一旁。"
+            },
+            "fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -2
+                },
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 1
+                }
+              ],
+              "note": "守卫收下祭品，却没有让路。退回 1 格。"
+            },
+            "great_fail": {
+              "effects": [
+                {
+                  "type": "hp",
+                  "value": -4
+                },
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 2
+                }
+              ],
+              "note": "守卫收下祭品，反而把你逼退 2 格。"
             }
           }
         }

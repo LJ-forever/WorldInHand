@@ -9,6 +9,7 @@ func _ready() -> void:
 	print("=== P0 smoke test（Voronoi / 自由画线） ===")
 	# 测试中不等待战斗面板输入；需要 UI 的分支单独断言状态机。
 	GameManager.combat_interactive = false
+	_check(DataManager.load_errors.is_empty(), "data self-check passes: %s" % "; ".join(DataManager.load_errors))
 	_test_map_generation()
 	_test_segment_cost_cap()
 	_test_drawing_and_animated_move()
@@ -893,12 +894,37 @@ func _test_event_system() -> void:
 	EventManager.debug_start_event("goal_guard")
 	var sacrifice_menu := EventManager._begin_sacrifice(goal_choice, {})
 	_check((sacrifice_menu.get("items", []) as Array).has("supply"), "sacrifice menu lists non-quest inventory")
-	EventManager.resolve_sacrifice("supply")
+	RNGManager.set_seed(_find_event_seed(false, true))
+	var failed_sacrifice := EventManager.resolve_sacrifice("supply")
 	var sacrifice_outcome := EventManager.take_pending_outcome()
-	_check(player.item_count("supply") == 0, "sacrificed item leaves inventory or equipment")
-	_check(bool(sacrifice_outcome.get("goal", false)), "sacrifice passes the goal guard")
+	_check(bool(failed_sacrifice.get("check", false)), "sacrifice now requires a negotiation check")
+	_check(String(failed_sacrifice.get("level", "")) == "great_fail", "a natural 1+1 fails the sacrifice check")
+	_check(player.item_count("supply") == 0, "sacrificed item is consumed even when the check fails")
+	_check(not bool(sacrifice_outcome.get("goal", false)), "a failed sacrifice does not pass the goal guard")
+	EventManager.finish_event()
+
+	player.hp = player.hp_max
+	player.goal_passed = false
+	player.add_item("supply", 1)
+	EventManager._pending.clear()
+	EventManager.debug_start_event("goal_guard")
+	EventManager._begin_sacrifice(goal_choice, {})
+	RNGManager.set_seed(_find_event_seed(true, false))
+	var passed_sacrifice := EventManager.resolve_sacrifice("supply")
+	var passed_outcome := EventManager.take_pending_outcome()
+	_check(int(passed_sacrifice.get("extra_bonus", 0)) == 1, "common sacrifice grants +1 check bonus")
+	_check(bool(passed_outcome.get("goal", false)), "a successful sacrifice passes the goal guard")
+	_check(EventManager.goal_fail_streak() == 0, "a successful guard check resets the failure streak")
 	player.goal_passed = false
 	EventManager.finish_event()
+
+	# 连续失败两次后守卫会疲惫，后续检定 DC -2。
+	EventManager._goal_fail_streak = 2
+	EventManager.debug_start_event("goal_guard")
+	var softened_text := EventManager._check_text(goal_choice.get("check", null))
+	_check(softened_text.contains("DC 11") and softened_text.contains("守卫疲惫"), "two guard failures soften the next check by 2")
+	EventManager.finish_event()
+	EventManager._goal_fail_streak = 0
 
 	# 退开：自动成功、不扣 HP、退回 1 格，且不通过终点。
 	var guard_map := GameManager.map
@@ -915,7 +941,17 @@ func _test_event_system() -> void:
 	_check(player.hp == guard_hp, "withdrawal costs no HP")
 	_check(player.cell_id != guard_cell and player.cell_id != guard_map.goal_id, "withdrawal retreats one cell away from the goal")
 	_check(not bool(withdraw_result.get("enter_goal", true)), "withdrawal does not enter the goal")
+	_check(EventManager.is_goal_guard_suppressed(), "withdrawal suppresses the guard for the rest of the round")
+	var guard_suppression_round := EventManager._goal_guard_suppressed_round
+	var random_was_enabled := EventManager.random_events_enabled
+	EventManager.random_events_enabled = false
+	_check(EventManager.goal_entry_block_reason().contains("下回合"), "goal entry stays blocked after withdrawal until the next round")
+	EventManager.random_events_enabled = random_was_enabled
 	EventManager.finish_event()
+	GameManager.round_index += 1
+	_check(not EventManager.is_goal_guard_suppressed(), "guard suppression expires when the round advances")
+	GameManager.round_index -= 1
+	EventManager._goal_guard_suppressed_round = guard_suppression_round
 	player.cell_id = restore_cell
 	GameManager.visual_position = restore_position
 
@@ -932,6 +968,12 @@ func _test_event_system() -> void:
 	_check(not player.has_item("herb") and not player.has_status("bleeding"), "effects after a death check are skipped")
 	var death_outcome := EventManager.take_pending_outcome()
 	_check(bool(death_outcome.get("death", false)), "death outcome is available to GameManager")
+	player.hp = 1
+	EventManager.debug_start_event("bandit_ambush")
+	EventManager._apply_effects([{"type": "hp", "value": -5}])
+	var named_death := EventManager.take_pending_outcome()
+	_check(String(named_death.get("death_reason", "")).contains("马匪伏击"), "death reason names the fatal event")
+	EventManager.finish_event()
 	player.hp = player.hp_max
 
 	# 事件开始/选项/关闭。
@@ -2076,14 +2118,27 @@ func _test_companion_and_events() -> void:
 		map_mate.actor.cell_id = beside
 		_check(map_mate._choose_intent(map, player) == "scout", "friendly map-task companion keeps scouting until the route is mapped")
 
+	# 敌方任务：相邻时先警告一次，下一次行动才偷。
+	var warner := CompanionAI.new()
+	_check(warner.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "theft-warning companion setup succeeds")
+	player.inventory.clear()
+	player.equipment.clear()
+	player.add_item("rare_charm", 1)
+	player.attributes["perception"] = -100
+	var warning_report := warner.take_turn(map, player, GameManager.round_index, true)
+	_check(bool(warning_report.get("theft_warning", false)), "thief warns before the first theft")
+	_check(player.has_item("rare_charm") and not warner.has_stolen_item(), "the warning round does not steal anything")
+
 	# 敌方任务：相邻时偷窃，物品与任务进度都转给 AI。
 	var enemy := CompanionAI.new()
 	_check(enemy.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "enemy companion setup succeeds")
+	enemy._theft_warning_given = true
 	player.inventory.clear()
 	player.equipment.clear()
 	player.add_item("rare_charm", 1)
 	player.attributes["perception"] = -100
 	var theft_report := enemy.take_turn(map, player, GameManager.round_index, true)
+	_check(String(theft_report.get("stolen_item_id", "")) == "rare_charm", "successful theft reports the stolen item")
 	_check(not player.has_item("rare_charm"), "enemy companion steals an adjacent player's item")
 	_check(enemy.actor.has_item("rare_charm"), "stolen item moves into the companion inventory")
 	_check(bool(theft_report.get("task_completed", false)), "successful theft completes her personal task")
@@ -2106,6 +2161,26 @@ func _test_companion_and_events() -> void:
 	_check(enemy._task_completed, "recovery does not undo the completed theft task")
 	_check(not enemy.has_stolen_item(), "theft tracking clears after a successful recovery")
 	GameManager.round_index = theft_round
+	player.attributes["perception"] = 4
+
+	# 击败影会直接返还她身上的失物。
+	var returner := CompanionAI.new()
+	_check(returner.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "returning thief setup succeeds")
+	returner.faction = "neutral"
+	returner.favor = 0
+	returner._theft_warning_given = true
+	returner.actor.ap_deci = 100
+	GameManager.pending_item_overflows.clear()
+	player.inventory.clear()
+	player.equipment.clear()
+	player.attributes["perception"] = -100
+	player.add_item("rare_charm", 1)
+	returner.take_turn(map, player, GameManager.round_index, true)
+	_check(returner.has_stolen_item() and not player.has_item("rare_charm"), "returning thief steals before being defeated")
+	GameManager.companion = returner
+	GameManager.mark_companion_dead("测试击倒")
+	_check(player.has_item("rare_charm") and not returner.has_stolen_item(), "defeating the thief returns the stolen item")
+	_check(GameManager.pending_item_overflows.is_empty(), "returned item goes into the backpack directly when a slot is free")
 	player.attributes["perception"] = 4
 
 	# 关系：ai_favor 立即改变好感；情报不足时只给模糊描述。
@@ -2538,6 +2613,7 @@ func _test_p0_exclusive_tasks() -> void:
 	_check(thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "thief setup succeeds")
 	thief.faction = "enemy"
 	thief.favor = -5
+	thief._theft_warning_given = true
 	player.equipment.clear()
 	player.inventory.clear()
 	player.equipment.append("bandit_blade")
@@ -2728,6 +2804,7 @@ func _test_p0_exclusive_tasks() -> void:
 	_check(run_thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", thief_cell, RNGManager.get_stream("ai")), "run thief setup succeeds")
 	run_thief.faction = "enemy"
 	run_thief.favor = -5
+	run_thief._theft_warning_given = true
 	GameManager.companion = run_thief
 	var defeat_result := {"win": true, "reason": ""}
 	var on_defeat := func(win: bool, reason: String) -> void:
@@ -2738,6 +2815,8 @@ func _test_p0_exclusive_tasks() -> void:
 	_check(not bool(defeat_result["win"]), "enemy theft immediately ends the run in defeat")
 	_check(GameManager.state == GameManager.State.GAME_OVER, "theft defeat enters GAME_OVER")
 	_check(String(defeat_result["reason"]).contains("偷走"), "theft defeat reason names the stolen item")
+	var theft_summary := GameManager.build_run_summary_text(false)
+	_check(theft_summary.contains("失物") and theft_summary.contains("马匪弯刀"), "defeat summary lists the unresolved stolen item")
 	_check(not SaveManager.has_save(SaveManager.DEFAULT_SLOT), "defeat clears the autosave slot")
 
 	_check(_start_game("lin_xiao", configs[0]), "trap-window victory run starts")
@@ -3065,15 +3144,43 @@ func _test_victory() -> void:
 	print("-- victory --")
 	var configs := MapConfigLoader.list_configs()
 	_start_game("lin_xiao", configs[0])
-	EventManager.random_events_enabled = false
 	var map := GameManager.map
 	var player := GameManager.player
-	var goal_neighbor: int = map.neighbors_of(map.goal_id)[0]
+	# 从中心到中心的直线可能穿过第三个地块并触发无关事件。优先选一条只经过
+	# “相邻格 → 终点格”的接近路线，让本用例只验证封印拦停。
+	var approach := _goal_approach_route(map)
+	var goal_neighbor: int = int(approach["neighbor"])
+	var approach_start: Vector2 = approach["start"]
+	var approach_end: Vector2 = approach["end"]
+
+	# 终点封印未解时，移动必须停在终点格外，不能触发自动胜利。
+	EventManager.random_events_enabled = true
+	EventManager._visited_pois.clear()
+	EventManager._random_events_this_run = EventManager.MAX_RANDOM_EVENTS_PER_RUN
 	player.cell_id = goal_neighbor
-	GameManager.visual_position = map.cell_center(goal_neighbor)
+	GameManager.visual_position = approach_start
 	player.ap_deci = 120
 	player.ap_max_deci = 120
-	var stroke := PackedVector2Array([map.cell_center(goal_neighbor), map.cell_center(map.goal_id)])
+	var sealed_stroke := PackedVector2Array([approach_start, approach_end])
+	_check(GameManager.set_drawn_path(sealed_stroke), "draw path toward a sealed goal")
+	_check(GameManager.execute_move(), "move toward a sealed goal starts")
+	GameManager.advance_movement(5.0)
+	# 直线笔迹可能先穿过终点旁边的其他地块；关键是停在终点格外，而不是停在起笔格。
+	_check(player.cell_id != map.goal_id, "unmet goal seal stops the player before the goal cell")
+	_check(map.graph_distance(player.cell_id, map.goal_id) == 1, "goal seal stop leaves the player next to the goal")
+	_check(map.cell_at_point(GameManager.visual_position) == player.cell_id, "goal seal stop snaps the token back into the current cell")
+	_check(GameManager.state == GameManager.State.PLAYING, "unmet goal seal does not end the run")
+	_check(GameManager.last_move_message.contains("封印"), "goal seal stop explains why the player cannot enter")
+	_check(EventManager.get_goal_seal_text().contains("0/%d" % EventManager.GOAL_SEAL_POI_COUNT), "goal seal progress starts at 0/%d" % EventManager.GOAL_SEAL_POI_COUNT)
+
+	EventManager.random_events_enabled = false
+	# 这个用例只验证“进入终点→胜利”的收尾，守卫流程由守卫专项用例覆盖。
+	player.goal_passed = true
+	player.cell_id = goal_neighbor
+	GameManager.visual_position = approach_start
+	player.ap_deci = 120
+	player.ap_max_deci = 120
+	var stroke := PackedVector2Array([approach_start, approach_end])
 	_check(GameManager.set_drawn_path(stroke), "draw path onto goal")
 	var result: Dictionary = {"win": false, "reason": ""}
 	var handler := func(win: bool, reason: String) -> void:
@@ -3161,6 +3268,30 @@ func _advance_until_settled() -> void:
 
 ## 测试里的开局默认等同于玩家按过「踏入荒原」。
 ## 需要验证序章本身时，再直接调用 GameManager.start_new_game。
+## 选一个直达终点的相邻格，并返回只穿过该格与终点格的短笔迹。
+## Voronoi 的格心连线偶尔会擦过第三个凹多边形格，触发无关事件，使封印用例失真。
+func _goal_approach_route(map: MapData) -> Dictionary:
+	var goal_center := map.cell_center(map.goal_id)
+	var neighbors := map.neighbors_of(map.goal_id)
+	for neighbor_id in neighbors:
+		var start := map.cell_center(neighbor_id)
+		var clear := true
+		for i in range(1, 80):
+			var probe := start.lerp(goal_center, float(i) / 80.0)
+			var probe_cell := map.cell_at_point(probe)
+			if probe_cell >= 0 and probe_cell != neighbor_id and probe_cell != map.goal_id:
+				clear = false
+				break
+		if clear:
+			return {"neighbor": neighbor_id, "start": start, "end": goal_center}
+	var fallback: int = neighbors[0]
+	return {
+		"neighbor": fallback,
+		"start": map.cell_center(fallback),
+		"end": goal_center,
+	}
+
+
 func _start_game(character_id: String, config: Dictionary = {}) -> bool:
 	var ok := GameManager.start_new_game(character_id, config)
 	if ok and GameManager.intro_open:

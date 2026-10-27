@@ -78,6 +78,11 @@ var _defeat_reason: String = ""
 var _stolen_item_id: String = ""
 ## 玩家最近一次尝试追回失物的回合；每回合最多 1 次。
 var _recovery_attempt_round: int = -10
+## 影第一次准备偷窃时只警告、不动手，给玩家一回合反应时间。
+var _theft_warning_given: bool = false
+## 本回合是否刚发出偷窃预警/刚得手；用于 GameManager 的显式反馈。
+var _just_warned_theft: bool = false
+var _just_stole_item: bool = false
 
 
 func setup(character_record: Dictionary, hidden_task_id: String, start_cell: int, rng: RandomNumberGenerator) -> bool:
@@ -190,6 +195,7 @@ func to_dict() -> Dictionary:
 		"defeat_reason": _defeat_reason,
 		"stolen_item_id": _stolen_item_id,
 		"recovery_attempt_round": _recovery_attempt_round,
+		"theft_warning_given": _theft_warning_given,
 	}
 
 
@@ -256,6 +262,7 @@ func load_dict(data: Dictionary) -> bool:
 	_defeat_reason = String(data.get("defeat_reason", ""))
 	_stolen_item_id = String(data.get("stolen_item_id", ""))
 	_recovery_attempt_round = int(data.get("recovery_attempt_round", -10))
+	_theft_warning_given = bool(data.get("theft_warning_given", false))
 	_rng = RNGManager.get_stream("ai")
 	return true
 
@@ -278,6 +285,10 @@ func take_turn(map: MapData, player: ActorState, current_round: int, player_can_
 		"visible_end": player_can_see,
 		"intent": "",
 		"combat": {},
+		"theft_warning": false,
+		"stolen_item_id": "",
+		"stolen_item_name": "",
+		"released_stolen_item_id": "",
 	}
 	if not alive or actor == null or map == null or player == null:
 		return report
@@ -287,6 +298,8 @@ func take_turn(map: MapData, player: ActorState, current_round: int, player_can_
 	_just_reached_goal = false
 	_player_defeated = false
 	_defeat_reason = ""
+	_just_warned_theft = false
+	_just_stole_item = false
 	_faction_at_start = faction
 	_favor_at_start = favor
 	_support_cooldown = maxi(0, _support_cooldown - 1)
@@ -393,6 +406,10 @@ func _finish_report(report: Dictionary, map: MapData, was_visible: bool) -> Dict
 	report["favor"] = favor
 	report["player_defeated"] = _player_defeated
 	report["defeat_reason"] = _defeat_reason
+	report["theft_warning"] = _just_warned_theft
+	if _just_stole_item:
+		report["stolen_item_id"] = _stolen_item_id
+		report["stolen_item_name"] = stolen_item_name()
 	return report
 
 
@@ -919,6 +936,14 @@ func _interact_hostile(map: MapData, player: ActorState, current_round: int) -> 
 		last_action = "%s不远不近地跟着，目光落在你的行囊上。" % _name()
 		return
 	if _task_type() == "steal_equipment" and not _task_completed:
+		if not _theft_warning_given:
+			# 第一次只警告，不立刻偷。玩家有一回合调整站位、拉开距离或先发制人。
+			_theft_warning_given = true
+			_just_warned_theft = true
+			_hostile_cooldown = 1
+			activity = "试探你的行囊"
+			last_action = "%s的目光在你的背包扣上停了一瞬，手指轻轻敲了敲刀鞘。" % _name()
+			return
 		_try_steal(player)
 		return
 	if _task_type() == "player_trapped_at_window" and not _task_completed and not _trap_used:
@@ -964,6 +989,7 @@ func _try_steal(player: ActorState) -> void:
 		return
 	_stolen_item_id = stolen
 	_recovery_attempt_round = -10
+	_just_stole_item = true
 	var result := _complete_exclusive_task(
 		"%s借擦肩而过的机会偷走了你的「%s」。你失去了继续前进的关键装备。" % [_name(), _str_item_name(stolen)]
 	)
@@ -1019,6 +1045,18 @@ func stolen_item_id() -> String:
 func stolen_item_name() -> String:
 	var item_id := stolen_item_id()
 	return "" if item_id.is_empty() else _str_item_name(item_id)
+
+
+## 影倒下时交还失物；返回物品 ID，空字符串表示没有失物。
+## 只负责把物品从她身上取下，实际放回玩家背包由 GameManager 处理（A3 溢出规则）。
+func release_stolen_item() -> String:
+	if not has_stolen_item():
+		_stolen_item_id = ""
+		return ""
+	var item_id := _stolen_item_id
+	actor.remove_item(item_id, 1)
+	_stolen_item_id = ""
+	return item_id
 
 
 func has_attempted_recovery(current_round: int) -> bool:
@@ -1430,6 +1468,9 @@ func _die(report: Dictionary, reason: String) -> void:
 	alive = false
 	activity = "倒下"
 	last_action = "%s倒下了。" % _name()
+	var released := release_stolen_item()
+	if not released.is_empty():
+		report["released_stolen_item_id"] = released
 	report["died"] = true
 	report["death_reason"] = reason
 

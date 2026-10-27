@@ -19,14 +19,35 @@ const EVENT_TARGET_MAX := 30
 const COMBAT_TRIALS_PER_PAIR := 500
 const DUEL_TRIALS_PER_PAIR := 120
 const PLAYER_IDS := ["lin_xiao", "sha_kai", "wei_la", "ying", "qing_heng"]
+const STRATEGIES := ["explore", "rush", "cautious", "aggressive"]
+const STRATEGY_LABELS := {
+	"explore": "自动探索",
+	"rush": "直奔终点",
+	"cautious": "谨慎推进",
+	"aggressive": "激进冒险",
+}
+## 各策略的休息阈值与是否侦察，避免把四种玩法都测成同一个“完美玩家”。
+const STRATEGY_REST_RATIO := {
+	"explore": 0.50,
+	"rush": 0.40,
+	"cautious": 0.60,
+	"aggressive": 0.35,
+}
 const TRIGGER_TARGET_RANGES := {
 	# 校准后的诊断区间：POI 数量固定为 10，单局实际只会进入 4～8 个，
 	# 因此 POI 份额天然低于区域/游荡；wander 含每回合环境判定。
 	"poi": [0.15, 0.25],
 	"enter_region": [0.20, 0.32],
 	"wander": [0.50, 0.65],
-	"goal": [0.0, 0.05],
 }
+## 终点守卫的触发份额完全取决于玩家是否反复冲终点，不能当作全局事件池阈值。
+## rush bot 每局会因退开/失败重试多次，20% 不代表事件池异常；改为单独报告
+## “守卫尝试/局”和通过方式，避免用放宽区间掩盖重试次数。
+const GOAL_TRIGGER_IS_STRATEGY_DEPENDENT := true
+## 中立追击的任务例外：影的偷窃任务要求她在完成前主动接近玩家。
+## 其他中立同伴不应无故追击；若例外同伴之外也出现追击，报告会标红。
+const NEUTRAL_HUNT_TASK_EXEMPT := ["ying"]
+const NEUTRAL_HUNT_OTHER_MAX := 0.02
 ## 总体意图分布只做宽带诊断；真正应达标的是按阵营拆分的任务驱动分布。
 ## MVP 的两个敌对隐藏任务（偷装备、困住玩家）都是“完成前持续接近玩家”，
 ## 所以 enemy 的 hunt 基线会到七成左右，不能用普通遭遇战的直觉去卡 50%。
@@ -44,7 +65,9 @@ const INTENT_TARGET_RANGES := {
 }
 ## 隐藏任务决定意图，所以按阵营分别检查：友好偏支援、中立偏休息/争胜、敌对偏追击。
 ## 影的偷窃任务在未完成时即使中立也会主动 hunt；得手转敌后又会继续袭击。
-## 因此中立 hunt 与敌方 attack 的上界按任务语义放宽，不把任务驱动误判成异常。
+## 因此中立 hunt 的阵营宽带只说明“含任务例外”；真正的达标检查在
+## _print_neutral_hunt_breakdown()：除影以外，中立追击必须 ≤ NEUTRAL_HUNT_OTHER_MAX。
+## 这比把整体上限从 2% 直接放宽到 25% 更严格，也不会掩盖其他同伴的异常。
 const FACTION_INTENT_TARGET_RANGES := {
 	"friendly": {
 		"support": [0.50, 0.75],
@@ -82,6 +105,11 @@ var _game_over_win := false
 var _game_over_reason := ""
 var _combat_rng := RandomNumberGenerator.new()
 var _entered_pois: Dictionary = {}
+var _strategy := "explore"
+var _strategy_reports: Array[Dictionary] = []
+## --trace=N 时打印第 N 局的逐回合状态，便于定位“卡住/超时”的具体原因。
+var _trace_run := -1
+var _trace_index := -1
 
 
 func _ready() -> void:
@@ -93,6 +121,18 @@ func _run_all() -> void:
 	var run_count := _read_int_arg("--runs", RUNS_DEFAULT)
 	if run_count < 1:
 		run_count = 1
+	_trace_run = _read_int_arg("--trace", -1)
+	var requested_strategy := _read_string_arg("--strategy", "explore")
+	var strategies: Array[String] = []
+	if requested_strategy == "all":
+		for strategy in STRATEGIES:
+			strategies.append(String(strategy))
+	elif STRATEGIES.has(requested_strategy):
+		strategies.append(requested_strategy)
+	else:
+		push_error("未知策略：%s（可用：%s 或 all）" % [requested_strategy, ", ".join(STRATEGIES)])
+		get_tree().quit()
+		return
 	var save_write_was_enabled := SaveManager.write_enabled
 	var combat_interactive_was_enabled := GameManager.combat_interactive
 	SaveManager.write_enabled = false
@@ -107,28 +147,44 @@ func _run_all() -> void:
 	if not EventManager.event_queued.is_connected(_on_event_queued):
 		EventManager.event_queued.connect(_on_event_queued)
 
-	print("=== 平衡基线报告 ===")
-	print("自动探索 %d 局，每局最多 %d 回合；模拟期间已关闭存档写入。" % [run_count, MAX_ROUNDS_PER_RUN])
-	for i in range(run_count):
-		_simulate_run(i, run_count)
-	_track_events = false
+	# 战斗蒙特卡洛与策略无关，只跑一次，避免多策略时重复统计。
 	var combat := _run_combat_trials()
-	var report := _build_report(run_count, combat)
+	_strategy_reports.clear()
+	print("=== 平衡基线报告 ===")
+	print("策略：%s；每策略 %d 局，每局最多 %d 回合；模拟期间已关闭存档写入。" % [
+		"，".join(strategies), run_count, MAX_ROUNDS_PER_RUN,
+	])
+	for strategy in strategies:
+		_strategy = strategy
+		_runs.clear()
+		print("")
+		print("--- 策略：%s ---" % _strategy_label(strategy))
+		for i in range(run_count):
+			_simulate_run(i, run_count)
+		var report := _build_report(run_count, combat)
+		report["strategy"] = strategy
+		_strategy_reports.append(report)
+		if strategies.size() > 1:
+			_print_strategy_summary(report)
+		else:
+			_print_report(report)
+	_track_events = false
 
 	SaveManager.write_enabled = save_write_was_enabled
 	GameManager.combat_interactive = combat_interactive_was_enabled
-	_print_report(report)
-	_write_report_json(report)
+	_write_report_json(_strategy_reports)
 	get_tree().quit()
 
 
 # ---------------- 自动跑局 ----------------
 
 func _simulate_run(index: int, total: int) -> void:
+	_trace_index = index
 	_game_over_win = false
 	_game_over_reason = ""
 	_current = {
 		"index": index,
+		"strategy": _strategy,
 		"player_id": "",
 		"rounds": 0,
 		"events": 0,
@@ -142,10 +198,19 @@ func _simulate_run(index: int, total: int) -> void:
 		"ai_turns": 0,
 		"intents": {},
 		"intents_by_faction": {},
+		"intents_by_companion_faction": {},
 		"ai_attacks": 0,
 		"ai_attack_hits": 0,
 		"ai_attack_damage": 0,
 		"ai_attack_hp_cost": 0,
+		"guard_attempts": 0,
+		"guard_sacrifice_attempts": 0,
+		"guard_sacrifice_passes": 0,
+		"guard_negotiations": 0,
+		"guard_withdraws": 0,
+		"guard_fights": 0,
+		"guard_passes": 0,
+		"goal_seal_blocks": 0,
 		"ended": "stalled",
 		"end_reason": "",
 		"start_hp": 0,
@@ -191,11 +256,13 @@ func _simulate_run(index: int, total: int) -> void:
 		if GameManager.state != GameManager.State.PLAYING:
 			break
 
-		if GameManager.player.hp <= int(ceil(GameManager.player.hp_max * 0.5)) \
+		_trace(index, "回合开始")
+		if GameManager.player.hp <= int(ceil(GameManager.player.hp_max * float(STRATEGY_REST_RATIO.get(_strategy, 0.5)))) \
 				and not GameManager.player.rest_used:
 			GameManager.rest()
 		_maybe_scout()
 		_spend_round_ap()
+		_trace(index, "行动结束")
 		if EventManager.is_event_active():
 			_auto_resolve_active_event()
 		if GameManager.state == GameManager.State.GAME_OVER:
@@ -257,6 +324,40 @@ func _simulate_run(index: int, total: int) -> void:
 		])
 
 
+func _trace(index: int, label: String) -> void:
+	if index != _trace_run or GameManager.player == null or GameManager.map == null:
+		return
+	print("    [trace] %s · 回合 %d · 格 %d · 距终点 %d · %s · AP %.1f · HP %d · 移动中 %s/%s · %s" % [
+		label,
+		GameManager.round_index,
+		GameManager.player.cell_id,
+		GameManager.get_goal_distance(),
+		EventManager.get_goal_seal_text(),
+		GameManager.player.ap_deci / 10.0,
+		GameManager.player.hp,
+		GameManager.is_moving,
+		GameManager.movement_paused,
+		GameManager.last_move_message,
+	])
+
+
+func _trace_move(detail: String) -> void:
+	if _trace_index != _trace_run or GameManager.player == null or GameManager.map == null:
+		return
+	print("    [move] %s · 回合 %d · 格 %d · 视觉位置 %s · 格心 %s · 距终点 %d · AP %.1f · 状态 %s · 封印 %s · 拦截 %s" % [
+		detail,
+		GameManager.round_index,
+		GameManager.player.cell_id,
+		GameManager.visual_position,
+		GameManager.map.cell_center(GameManager.player.cell_id),
+		GameManager.get_goal_distance(),
+		GameManager.player.ap_deci / 10.0,
+		GameManager.player.statuses.keys(),
+		EventManager.get_goal_seal_text(),
+		EventManager.goal_entry_block_reason(),
+	])
+
+
 func _on_game_over(win: bool, reason: String) -> void:
 	_game_over_win = win
 	_game_over_reason = reason
@@ -311,10 +412,13 @@ func _on_event_started(event_data: Dictionary) -> void:
 func _maybe_scout() -> void:
 	if GameManager.state != GameManager.State.PLAYING or GameManager.is_moving:
 		return
+	if _strategy == "rush":
+		return
 	# 侦察是可选的信息投资，会消耗本可用于移动的 AP。
 	# 基线玩家只在 AP 充裕时偶尔侦察，避免把低速角色的行动全花在开雾上，
 	# 否则测到的不是事件频率，而是“侦察型玩家”的事件频率。
-	if GameManager.player.ap_deci < 60:
+	var min_ap := 70 if _strategy == "cautious" else (80 if _strategy == "aggressive" else 60)
+	if GameManager.player.ap_deci < min_ap:
 		return
 	if not _known_unentered_poi().is_empty():
 		return
@@ -335,16 +439,23 @@ func _spend_round_ap() -> void:
 			return
 		var target := _choose_explore_target()
 		if target < 0:
+			_trace_move("无移动目标")
 			return
 		var stroke := _stroke_to(target)
 		if stroke.size() < 2:
+			_trace_move("路径不足 2 点，目标格 %d" % target)
 			return
 		var ap_before := GameManager.player.ap_deci
 		if not GameManager.set_drawn_path(stroke):
+			_trace_move("set_drawn_path 失败：%s，目标格 %d" % [GameManager.last_path_error, target])
 			return
 		if not GameManager.execute_move():
+			_trace_move("execute_move 失败，目标格 %d" % target)
 			return
 		_settle_movement()
+		var blocked_by_seal := GameManager.last_move_message.contains("封印")
+		if blocked_by_seal:
+			_current["goal_seal_blocks"] = int(_current["goal_seal_blocks"]) + 1
 		_current["ap_spent_deci"] = int(_current["ap_spent_deci"]) \
 			+ maxi(0, ap_before - GameManager.player.ap_deci)
 		if EventManager.is_event_active():
@@ -352,6 +463,9 @@ func _spend_round_ap() -> void:
 		if GameManager.state == GameManager.State.GAME_OVER:
 			return
 		if GameManager.state != GameManager.State.PLAYING:
+			return
+		# 守卫退开/封印挡路后，本回合再试也不会放行，别把剩余 AP 浪费在同一个入口。
+		if blocked_by_seal or EventManager.is_goal_guard_suppressed():
 			return
 		if GameManager.player.ap_deci >= ap_before:
 			# 没有消耗 AP 却结束了移动，避免在这里死循环。
@@ -391,10 +505,22 @@ func _auto_resolve_active_event() -> void:
 	while EventManager.is_event_active() and guard < 16:
 		guard += 1
 		var choices := EventManager.get_choices()
-		var choice_id := _pick_safe_choice(choices)
+		var is_goal_guard := EventManager.active_event_id == "goal_guard"
+		var choice_id := _pick_choice(choices)
 		if choice_id.is_empty():
 			EventManager.finish_event()
 			return
+		if is_goal_guard:
+			_current["guard_attempts"] = int(_current["guard_attempts"]) + 1
+			match choice_id:
+				"sacrifice_item":
+					_current["guard_sacrifice_attempts"] = int(_current["guard_sacrifice_attempts"]) + 1
+				"negotiate":
+					_current["guard_negotiations"] = int(_current["guard_negotiations"]) + 1
+				"withdraw":
+					_current["guard_withdraws"] = int(_current["guard_withdraws"]) + 1
+				"fight":
+					_current["guard_fights"] = int(_current["guard_fights"]) + 1
 		if not _current.is_empty():
 			_current["last_event_id"] = EventManager.active_event_id
 			_current["last_choice_id"] = choice_id
@@ -409,25 +535,121 @@ func _auto_resolve_active_event() -> void:
 				"steal_menu":
 					var steal_items: Array = result.get("items", [])
 					if steal_items.is_empty():
-						EventManager.finish_event()
-						return
+						break
 					result = EventManager.resolve_steal_item(String(steal_items[0]))
 				"sacrifice_menu":
 					var sacrifice_items: Array = result.get("items", [])
 					if sacrifice_items.is_empty():
-						EventManager.finish_event()
-						return
+						break
 					result = EventManager.resolve_sacrifice(String(sacrifice_items[0]))
 				"heal_menu":
 					result = EventManager.resolve_heal("hp")
 				_:
-					EventManager.finish_event()
-					return
+					break
 		if not _current.is_empty():
 			_current["last_event_hp_after"] = GameManager.player.hp
+		if is_goal_guard:
+			var level := String(result.get("level", ""))
+			var passed := choice_id != "withdraw" \
+				and (level == "success" or level == "great_success" or bool(result.get("enter_goal", false)))
+			if passed:
+				_current["guard_passes"] = int(_current["guard_passes"]) + 1
+				if choice_id == "sacrifice_item":
+					_current["guard_sacrifice_passes"] = int(_current["guard_sacrifice_passes"]) + 1
 		if EventManager.is_event_active():
 			EventManager.finish_event()
 		return
+
+
+## 按策略选择事件选项：探索/谨慎取最安全项，赶路取第一项，激进取最高风险项。
+func _pick_choice(choices: Array) -> String:
+	if EventManager.active_event_id == "goal_guard":
+		return _pick_guard_choice(choices)
+	match _strategy:
+		"rush":
+			# 赶路玩家仍会规避明显会送命的选项；与“激进冒险”区分开，
+			# 这样测到的是节奏压力，而不是随机送死。
+			return _pick_safe_choice(choices)
+		"aggressive":
+			return _pick_aggressive_choice(choices)
+		_:
+			return _pick_safe_choice(choices)
+
+
+func _first_available_choice(choices: Array, order: Array) -> String:
+	var by_id := {}
+	for value in choices:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var choice: Dictionary = value
+		by_id[String(choice.get("id", ""))] = choice
+	for id_value in order:
+		var id := String(id_value)
+		if not by_id.has(id):
+			continue
+		var choice: Dictionary = by_id[id]
+		if bool(choice.get("disabled", false)):
+			continue
+		return id
+	return ""
+
+
+## 守卫决策是节奏的关键：赶路/谨慎优先交出物品，激进优先硬闯；
+## 只有谨慎玩家在濒死时才会退开（退开后本回合不能再进终点）。
+func _pick_guard_choice(choices: Array) -> String:
+	var hp := GameManager.player.hp if GameManager.player != null else 1
+	var hp_max := GameManager.player.hp_max if GameManager.player != null else 1
+	if _strategy != "aggressive":
+		# 会看血条的玩家不会拿“可能当场致死”的检定硬赌：
+		# 守卫的大失败最多扣 4 HP，血量不够时先退开，下回合休息后再来。
+		var raw_by_id := {}
+		for raw_value in EventManager.active_event.get("choices", []):
+			var raw: Dictionary = raw_value
+			raw_by_id[String(raw.get("id", ""))] = raw
+		var worst := 0
+		for id in ["sacrifice_item", "negotiate", "fight"]:
+			if raw_by_id.has(id):
+				worst = maxi(worst, _choice_worst_damage(raw_by_id[id]))
+		if worst >= hp:
+			var retreat := _first_available_choice(choices, ["withdraw"])
+			if not retreat.is_empty():
+				return retreat
+	var low_hp := hp * 4 <= hp_max
+	match _strategy:
+		"aggressive":
+			return _first_available_choice(choices, ["fight", "negotiate", "sacrifice_item", "withdraw"])
+		"cautious":
+			if low_hp:
+				var withdraw := _first_available_choice(choices, ["withdraw"])
+				if not withdraw.is_empty():
+					return withdraw
+			return _first_available_choice(choices, ["sacrifice_item", "negotiate", "fight", "withdraw"])
+		_:
+			return _first_available_choice(choices, ["sacrifice_item", "negotiate", "fight", "withdraw"])
+
+
+func _pick_aggressive_choice(choices: Array) -> String:
+	var best_id := ""
+	var best_rank := -1
+	for value in choices:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var choice: Dictionary = value
+		if bool(choice.get("disabled", false)):
+			continue
+		var risk := String(choice.get("risk", ""))
+		var rank := 0
+		match risk:
+			"高":
+				rank = 3
+			"中":
+				rank = 2
+			"低":
+				rank = 1
+		if rank > best_rank:
+			best_rank = rank
+			best_id = String(choice.get("id", ""))
+	return best_id
 
 
 ## 生存优先：不选高风险检定；未知风险的非检定选项优先。
@@ -518,6 +740,17 @@ func _choose_explore_target() -> int:
 	var player := GameManager.player
 	if map == null or player == null:
 		return -1
+	# 赶路/激进：只走“解封印 → 终点”的最短路线；谨慎玩家探索到第 8 回合
+	# 或 4 个 POI 后才开始收束。探索玩家永远不主动去终点。
+	if _strategy == "rush" or _strategy == "aggressive":
+		return _choose_goal_or_seal_target()
+	if _strategy == "cautious":
+		if EventManager.is_goal_seal_open() and _cautious_goal_ready():
+			return map.goal_id
+		# 谨慎玩家也会看地图：探索到第 12 回合还没凑齐封印时，
+		# 直接去最近的已知/未知 POI，避免把“找不到 POI”误测成游戏太慢。
+		if GameManager.round_index >= 12 and not EventManager.is_goal_seal_open():
+			return _choose_goal_or_seal_target()
 	var known_pois := _known_unentered_poi()
 	if not known_pois.is_empty():
 		return _nearest_by_graph(known_pois)
@@ -552,6 +785,29 @@ func _choose_explore_target() -> int:
 			best_score = score
 			best = cell_id
 	return best
+
+
+## 终点封印没解时先去最近的未访问 POI；解封后直取终点。
+## 赶路 bot 视为熟悉地图（知道 POI 位置），这是对“最快通关”最有利的假设。
+func _choose_goal_or_seal_target() -> int:
+	var map := GameManager.map
+	if map == null:
+		return -1
+	if EventManager.is_goal_seal_open():
+		return map.goal_id
+	var candidates: Array[int] = []
+	for cell_id in map.poi_ids:
+		var cell := map.get_cell(cell_id)
+		if cell == null or cell.entered:
+			continue
+		candidates.append(cell_id)
+	if candidates.is_empty():
+		return map.goal_id
+	return _nearest_by_graph(candidates)
+
+
+func _cautious_goal_ready() -> bool:
+	return GameManager.round_index >= 8 or int(_current.get("poi_entries", 0)) >= 4
 
 
 func _frontier_candidates() -> Array[int]:
@@ -594,7 +850,11 @@ func _stroke_to(target_cell: int) -> PackedVector2Array:
 	var path := map.shortest_cell_path(player.cell_id, target_cell)
 	if path.is_empty() and target_cell != player.cell_id:
 		return result
-	result.append(GameManager.visual_position)
+	# 标记可能停在上一条路径的格边之外；从格心起笔，避免生成过短或跨格的虚假路径。
+	var start_point := GameManager.visual_position
+	if map.cell_at_point(start_point) != player.cell_id:
+		start_point = map.cell_center(player.cell_id)
+	result.append(start_point)
 	for cell_id in path:
 		if cell_id == player.cell_id:
 			continue
@@ -619,6 +879,17 @@ func _record_ai_turn() -> void:
 		by_faction[faction] = {}
 	var faction_intents: Dictionary = by_faction[faction]
 	faction_intents[intent] = int(faction_intents.get(intent, 0)) + 1
+	var companion_id := String(companion.actor.character_id)
+	if companion_id.is_empty():
+		companion_id = "unknown"
+	var by_companion_faction: Dictionary = _current["intents_by_companion_faction"]
+	if not by_companion_faction.has(companion_id):
+		by_companion_faction[companion_id] = {}
+	var companion_by_faction: Dictionary = by_companion_faction[companion_id]
+	if not companion_by_faction.has(faction):
+		companion_by_faction[faction] = {}
+	var companion_intents: Dictionary = companion_by_faction[faction]
+	companion_intents[intent] = int(companion_intents.get(intent, 0)) + 1
 	_current["ai_turns"] = int(_current["ai_turns"]) + 1
 
 	var combat := companion.last_combat
@@ -804,6 +1075,7 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 	var event_totals := {}
 	var intent_totals := {}
 	var intents_by_faction := {}
+	var intents_by_companion_faction := {}
 	var ended_counts := {}
 	var event_counts_per_run: Array[int] = []
 	var total_events := 0
@@ -817,6 +1089,14 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 	var total_pois := 0
 	var total_ap_rolled := 0
 	var total_ap_spent := 0
+	var total_guard_attempts := 0
+	var total_guard_sacrifice_attempts := 0
+	var total_guard_sacrifice_passes := 0
+	var total_guard_negotiations := 0
+	var total_guard_withdraws := 0
+	var total_guard_fights := 0
+	var total_guard_passes := 0
+	var total_goal_seal_blocks := 0
 	var death_count := 0
 	var win_count := 0
 	var timeout_count := 0
@@ -838,6 +1118,9 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 				"runs": 0,
 				"events": 0,
 				"deaths": 0,
+				"wins": 0,
+				"timeouts": 0,
+				"rounds": 0,
 				"in_range": 0,
 				"min_events": 9999,
 				"max_events": 0,
@@ -851,6 +1134,11 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 		if in_range:
 			char_stats["in_range"] = int(char_stats["in_range"]) + 1
 		var ended := String(run.get("ended", "stalled"))
+		char_stats["rounds"] = int(char_stats["rounds"]) + int(run.get("rounds", 0))
+		if ended == "win":
+			char_stats["wins"] = int(char_stats["wins"]) + 1
+		elif ended == "timeout":
+			char_stats["timeouts"] = int(char_stats["timeouts"]) + 1
 		if ended != "death":
 			survivor_events += events
 			survivor_runs += 1
@@ -866,6 +1154,14 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 		total_pois += int(run.get("poi_entries", 0))
 		total_ap_rolled += int(run.get("ap_rolled_deci", 0))
 		total_ap_spent += int(run.get("ap_spent_deci", 0))
+		total_guard_attempts += int(run.get("guard_attempts", 0))
+		total_guard_sacrifice_attempts += int(run.get("guard_sacrifice_attempts", 0))
+		total_guard_sacrifice_passes += int(run.get("guard_sacrifice_passes", 0))
+		total_guard_negotiations += int(run.get("guard_negotiations", 0))
+		total_guard_withdraws += int(run.get("guard_withdraws", 0))
+		total_guard_fights += int(run.get("guard_fights", 0))
+		total_guard_passes += int(run.get("guard_passes", 0))
+		total_goal_seal_blocks += int(run.get("goal_seal_blocks", 0))
 		hp_delta_total += int(run.get("end_hp", 0)) - int(run.get("start_hp", 0))
 		if events >= EVENT_TARGET_MIN and events <= EVENT_TARGET_MAX:
 			target_hits += 1
@@ -888,6 +1184,18 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 			if not intents_by_faction.has(faction):
 				intents_by_faction[faction] = {}
 			_merge_counts(intents_by_faction[faction], by_faction[faction_key])
+		var by_companion_faction: Dictionary = run.get("intents_by_companion_faction", {})
+		for companion_key in by_companion_faction.keys():
+			var companion_id := String(companion_key)
+			if not intents_by_companion_faction.has(companion_id):
+				intents_by_companion_faction[companion_id] = {}
+			var target_companion: Dictionary = intents_by_companion_faction[companion_id]
+			var source_companion: Dictionary = by_companion_faction[companion_key]
+			for faction_key in source_companion.keys():
+				var faction := String(faction_key)
+				if not target_companion.has(faction):
+					target_companion[faction] = {}
+				_merge_counts(target_companion[faction], source_companion[faction_key])
 
 	var event_average := float(total_events) / maxf(1.0, float(run_count))
 	var sorted_events := event_counts_per_run.duplicate()
@@ -933,11 +1241,20 @@ func _build_report(run_count: int, combat: Dictionary) -> Dictionary:
 		"event_totals": event_totals,
 		"intent_totals": intent_totals,
 		"intents_by_faction": intents_by_faction,
+		"intents_by_companion_faction": intents_by_companion_faction,
 		"ai_turns": total_ai_turns,
 		"ai_attacks": total_ai_attacks,
 		"ai_attack_hits": total_ai_hits,
 		"ai_attack_damage": total_ai_damage,
 		"ai_attack_hp_cost": total_ai_hp_cost,
+		"guard_attempts": total_guard_attempts,
+		"guard_sacrifice_attempts": total_guard_sacrifice_attempts,
+		"guard_sacrifice_passes": total_guard_sacrifice_passes,
+		"guard_negotiations": total_guard_negotiations,
+		"guard_withdraws": total_guard_withdraws,
+		"guard_fights": total_guard_fights,
+		"guard_passes": total_guard_passes,
+		"goal_seal_blocks": total_goal_seal_blocks,
 		"hp_delta_total": hp_delta_total,
 		"ended_counts": ended_counts,
 		"deaths": death_count,
@@ -953,6 +1270,55 @@ func _merge_counts(target: Dictionary, source) -> void:
 	for key in source.keys():
 		var clean := String(key)
 		target[clean] = int(target.get(clean, 0)) + int(source[key])
+
+
+## 多策略对比时只打印核心结论，完整明细仍在 JSON 里。
+func _print_strategy_summary(report: Dictionary) -> void:
+	var runs := int(report.get("runs_completed", 0))
+	var wins := int(report.get("wins", 0))
+	var deaths := int(report.get("deaths", 0))
+	var timeouts := int(report.get("timeouts", 0))
+	var rounds := int(report.get("rounds", 0))
+	var events := int(report.get("events", 0))
+	print("  结果：胜利 %d/%d（%.0f%%）· 死亡 %d（%.0f%%）· 超时 %d · 平均 %.1f 回合 · 平均 %.1f 事件" % [
+		wins,
+		runs,
+		100.0 * float(wins) / maxf(1.0, float(runs)),
+		deaths,
+		100.0 * float(deaths) / maxf(1.0, float(runs)),
+		timeouts,
+		float(rounds) / maxf(1.0, float(runs)),
+		float(events) / maxf(1.0, float(runs)),
+	])
+	var guard_attempts := int(report.get("guard_attempts", 0))
+	var sacrifice_attempts := int(report.get("guard_sacrifice_attempts", 0))
+	print("  守卫：遭遇 %d · 通过 %d · 献祭 %d（成功 %d，%.0f%%）· 交涉 %d · 硬闯 %d · 退开 %d · 封印拦截 %d" % [
+		guard_attempts,
+		int(report.get("guard_passes", 0)),
+		sacrifice_attempts,
+		int(report.get("guard_sacrifice_passes", 0)),
+		100.0 * float(report.get("guard_sacrifice_passes", 0)) / maxf(1.0, float(sacrifice_attempts)),
+		int(report.get("guard_negotiations", 0)),
+		int(report.get("guard_fights", 0)),
+		int(report.get("guard_withdraws", 0)),
+		int(report.get("goal_seal_blocks", 0)),
+	])
+	var per_character: Dictionary = report.get("per_character", {})
+	var char_parts: Array[String] = []
+	for character_id in per_character.keys():
+		var stats: Dictionary = per_character[character_id]
+		char_parts.append("%s %dW/%dD/%dT 均 %.1f 回合" % [
+			String(character_id),
+			int(stats.get("wins", 0)),
+			int(stats.get("deaths", 0)),
+			int(stats.get("timeouts", 0)),
+			float(stats.get("rounds", 0)) / maxf(1.0, float(stats.get("runs", 1))),
+		])
+	print("  角色：%s" % " · ".join(char_parts))
+
+
+func _strategy_label(strategy: String) -> String:
+	return String(STRATEGY_LABELS.get(strategy, strategy))
 
 
 func _print_report(report: Dictionary) -> void:
@@ -983,15 +1349,18 @@ func _print_report(report: Dictionary) -> void:
 	var per_character: Dictionary = report.get("per_character", {})
 	for character_id in per_character.keys():
 		var stats: Dictionary = per_character[character_id]
-		print("    %s：%d 局 · 平均 %.1f 事件 · 范围 %d–%d · 达标 %d/%d · 死亡 %d" % [
+		print("    %s：%d 局 · %dW/%dD/%dT · 平均 %.1f 回合 · 平均 %.1f 事件 · 范围 %d–%d · 达标 %d/%d" % [
 			String(character_id),
 			int(stats.get("runs", 0)),
+			int(stats.get("wins", 0)),
+			int(stats.get("deaths", 0)),
+			int(stats.get("timeouts", 0)),
+			float(stats.get("rounds", 0)) / maxf(1.0, float(stats.get("runs", 1))),
 			float(stats.get("events", 0)) / maxf(1.0, float(stats.get("runs", 1))),
 			int(stats.get("min_events", 0)),
 			int(stats.get("max_events", 0)),
 			int(stats.get("in_range", 0)),
 			int(stats.get("runs", 0)),
-			int(stats.get("deaths", 0)),
 		])
 	print("  移动：%d 格 / %d 个 POI；AP 消耗 %d / 掷出 %d（%.0f%%）" % [
 		int(report.get("cells_entered", 0)),
@@ -1003,6 +1372,21 @@ func _print_report(report: Dictionary) -> void:
 	print("  事件密度：每 %.2f AP 一次事件；每 %.2f 格一次事件" % [
 		float(report.get("ap_spent_deci", 0)) / maxf(1.0, float(report.get("events", 0))) / 10.0,
 		float(report.get("cells_entered", 0)) / maxf(1.0, float(report.get("events", 0))),
+	])
+	var guard_sacrifice_attempts := int(report.get("guard_sacrifice_attempts", 0))
+	var guard_attempts_total := int(report.get("guard_attempts", 0))
+	var guard_attempts_per_run := float(guard_attempts_total) / maxf(1.0, float(report.get("runs_completed", 1)))
+	print("  守卫密度：%.2f 次/局（含退开与失败后的重试；不是事件池份额）" % guard_attempts_per_run)
+	print("  守卫：遭遇 %d 次 · 通过 %d · 献祭 %d 次（成功 %d，%.0f%%）· 交涉 %d · 硬闯 %d · 退开 %d · 封印拦截 %d" % [
+		int(report.get("guard_attempts", 0)),
+		int(report.get("guard_passes", 0)),
+		guard_sacrifice_attempts,
+		int(report.get("guard_sacrifice_passes", 0)),
+		100.0 * float(report.get("guard_sacrifice_passes", 0)) / maxf(1.0, float(guard_sacrifice_attempts)),
+		int(report.get("guard_negotiations", 0)),
+		int(report.get("guard_fights", 0)),
+		int(report.get("guard_withdraws", 0)),
+		int(report.get("goal_seal_blocks", 0)),
 	])
 	var ended: Dictionary = report.get("ended_counts", {})
 	print("  结局：死亡 %d · 胜利 %d · 超时 %d · 其他 %d" % [
@@ -1021,6 +1405,9 @@ func _print_report(report: Dictionary) -> void:
 	print("")
 	print("--- 事件触发来源 ---")
 	_print_share_line(report.get("trigger_totals", {}), int(report.get("events", 0)), TRIGGER_TARGET_RANGES)
+	if GOAL_TRIGGER_IS_STRATEGY_DEPENDENT:
+		print("  说明：终点守卫是强制事件，退开/失败重试越多，POI/区域/wander 的原始份额被稀释越多；")
+		print("        守卫本身只按「尝试/局」和通过方式核对；wander 保留原始份额与目标带，偏低不靠放宽上限掩盖，事件池扩充仍属后续内容工作。")
 	var queued: Dictionary = report.get("queued_trigger_totals", {})
 	var queued_total := 0
 	for key in queued.keys():
@@ -1046,6 +1433,7 @@ func _print_report(report: Dictionary) -> void:
 			faction_total += int(faction_counts[key])
 		print("  [%s] 总 %d 次（按阵营任务检查）" % [faction_key, faction_total])
 		_print_intent_counts(faction_counts, "    ", FACTION_INTENT_TARGET_RANGES.get(faction_key, {}))
+	_print_neutral_hunt_breakdown(report)
 	var ai_turns := int(report.get("ai_turns", 0))
 	var ai_attacks := int(report.get("ai_attacks", 0))
 	var ai_hits := int(report.get("ai_attack_hits", 0))
@@ -1126,7 +1514,45 @@ func _print_share_line(counts: Dictionary, total: int, targets: Dictionary, labe
 		var count := int(counts[key])
 		var share := float(count) / maxf(1.0, float(total))
 		var label := _trigger_text(String(key)) if label_mode == "trigger" else _intent_text(String(key))
-		print("  %s：%d（%.1f%%）%s" % [label, count, share * 100.0, _target_text(targets, String(key), share)])
+		var target_suffix := _target_text(targets, String(key), share)
+		if label_mode == "trigger" and String(key) == "goal" and GOAL_TRIGGER_IS_STRATEGY_DEPENDENT:
+			target_suffix = "  策略相关，仅诊断（不计入达标；见守卫密度）"
+		print("  %s：%d（%.1f%%）%s" % [label, count, share * 100.0, target_suffix])
+
+
+## 中立追击的整体上限会被影的偷窃任务拉高；按同伴拆开，才能区分
+## “任务驱动的追击”和“普通中立同伴不该出现的追击”。
+func _print_neutral_hunt_breakdown(report: Dictionary) -> void:
+	var by_companion: Dictionary = report.get("intents_by_companion_faction", {})
+	if by_companion.is_empty():
+		return
+	var printed_header := false
+	var companion_ids := by_companion.keys()
+	companion_ids.sort()
+	for companion_key in companion_ids:
+		var companion_id := String(companion_key)
+		var by_faction: Dictionary = by_companion[companion_key]
+		var neutral: Dictionary = by_faction.get("neutral", {})
+		var total := 0
+		for key in neutral.keys():
+			total += int(neutral[key])
+		if total <= 0:
+			continue
+		if not printed_header:
+			print("  中立追击来源（按同伴拆分）：")
+			printed_header = true
+		var hunt := int(neutral.get("hunt", 0))
+		var share := float(hunt) / float(total)
+		var status := ""
+		if NEUTRAL_HUNT_TASK_EXEMPT.has(companion_id):
+			status = "  （影的偷窃任务要求接近玩家，属预期例外）"
+		elif share > NEUTRAL_HUNT_OTHER_MAX:
+			status = "  目标 ≤%.0f%% · 偏高" % (NEUTRAL_HUNT_OTHER_MAX * 100.0)
+		else:
+			status = "  目标 ≤%.0f%% · 达标" % (NEUTRAL_HUNT_OTHER_MAX * 100.0)
+		print("    %s：追击 %d/%d（%.1f%%）%s" % [
+			companion_id, hunt, total, share * 100.0, status,
+		])
 
 
 func _print_intent_counts(counts: Dictionary, prefix: String, targets: Dictionary) -> void:
@@ -1230,13 +1656,21 @@ func _end_kind_text(kind: String) -> String:
 			return "其他"
 
 
-func _write_report_json(report: Dictionary) -> void:
+func _write_report_json(reports: Array[Dictionary]) -> void:
+	var payload: Dictionary
+	if reports.size() == 1:
+		payload = reports[0]
+	else:
+		payload = {
+			"generated_at": Time.get_datetime_string_from_system(false, true),
+			"strategies": reports,
+		}
 	var path := "user://balance_report.json"
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		push_warning("无法写入平衡报告：%s" % path)
 		return
-	file.store_string(JSON.stringify(report, "\t"))
+	file.store_string(JSON.stringify(payload, "\t"))
 	file.close()
 	print("")
 	print("完整 JSON：%s" % ProjectSettings.globalize_path(path))
@@ -1252,4 +1686,17 @@ func _read_int_arg(name: String, fallback: int) -> int:
 			return int(String(args[i + 1]))
 		if arg.begins_with(name + "="):
 			return int(arg.trim_prefix(name + "="))
+	return fallback
+
+
+func _read_string_arg(name: String, fallback: String) -> String:
+	var args := OS.get_cmdline_user_args()
+	if args.is_empty():
+		args = OS.get_cmdline_args()
+	for i in range(args.size()):
+		var arg := String(args[i])
+		if arg == name and i + 1 < args.size():
+			return String(args[i + 1])
+		if arg.begins_with(name + "="):
+			return String(arg.trim_prefix(name + "="))
 	return fallback

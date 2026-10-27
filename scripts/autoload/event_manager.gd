@@ -27,6 +27,15 @@ const MAX_RANDOM_EVENTS_PER_ROUND := 3
 ## 单局随机事件上限。20～30 是设计目标；高速角色在 40 回合内可覆盖整张图，
 ## 不设上限时会刷到 35～46 个。预留 1 个名额给终点守卫，含终点事件时仍不超过 30。
 const MAX_RANDOM_EVENTS_PER_RUN := 29
+## 终点封印：抵达终点前必须先踏足的地点数。
+## 让直奔终点的路线不再是最优解，把单局节奏拉到 15～20 回合。
+## 关闭随机事件（测试/调试）时封印自动解除，避免旧的移动测试需要额外铺垫。
+## 终点封印要求本局至少踏足 3 处不同地点，迫使赶路玩家也经历一段探索。
+## 3 处是复审建议“2～3 个必经地点”的上沿：单局节奏因此落在 15～20 回合。
+const GOAL_SEAL_POI_COUNT := 3
+## 守卫退开是安全阀，但不能被无限重复：每局最多成功退开 2 次，
+## 之后必须通过检定、献祭或硬闯来解决。这样既保留撤退选择，又阻断跨回合循环。
+const GOAL_WITHDRAW_LIMIT := 2
 const RECENT_EVENT_MEMORY := 3
 const POI_TRIGGER_CHANCE := 1.0
 ## 首次进入地形连通区域时的触发概率。设计目标是单局 20～30 个事件；
@@ -89,6 +98,13 @@ var _pending: Dictionary = {}
 var _reveal_level: int = 0
 var _goal_attempts: int = 0
 var _goal_counted: bool = false
+## 守卫退开后，本回合不再触发守卫事件；但终点入口仍封闭到下一回合，
+## 防止“退开→立刻重进”变成无检定免费通关。
+var _goal_guard_suppressed_round: int = 0
+## 终点守卫连续检定失败次数；达到 2 次后，后续守卫检定 DC -2。
+var _goal_fail_streak: int = 0
+## 本局已成功退开的次数；达到 GOAL_WITHDRAW_LIMIT 后「退开」不可再选。
+var _goal_withdraw_count: int = 0
 var _pending_goal_victory: bool = false
 var _pending_death: bool = false
 var _pending_death_reason: String = ""
@@ -136,6 +152,9 @@ func reset_state() -> void:
 	_reveal_level = 0
 	_goal_attempts = 0
 	_goal_counted = false
+	_goal_guard_suppressed_round = 0
+	_goal_fail_streak = 0
+	_goal_withdraw_count = 0
 	_pending_goal_victory = false
 	_pending_death = false
 	_pending_death_reason = ""
@@ -175,6 +194,9 @@ func to_save_data() -> Dictionary:
 		"reveal_level": _reveal_level,
 		"goal_attempts": _goal_attempts,
 		"goal_counted": _goal_counted,
+		"goal_guard_suppressed_round": _goal_guard_suppressed_round,
+		"goal_fail_streak": _goal_fail_streak,
+		"goal_withdraw_count": _goal_withdraw_count,
 		"event_log": _event_log.duplicate(),
 		"random_events_enabled": random_events_enabled,
 	}
@@ -245,6 +267,9 @@ func load_save_data(map: MapData, data: Dictionary) -> bool:
 	_reveal_level = clampi(int(data.get("reveal_level", 0)), 0, GameManager.MAX_AI_REVEAL_LEVEL)
 	_goal_attempts = maxi(0, int(data.get("goal_attempts", 0)))
 	_goal_counted = bool(data.get("goal_counted", false))
+	_goal_guard_suppressed_round = maxi(0, int(data.get("goal_guard_suppressed_round", 0)))
+	_goal_fail_streak = maxi(0, int(data.get("goal_fail_streak", 0)))
+	_goal_withdraw_count = clampi(int(data.get("goal_withdraw_count", 0)), 0, GOAL_WITHDRAW_LIMIT)
 	_event_log.clear()
 	for line in data.get("event_log", []):
 		_event_log.append(String(line))
@@ -337,6 +362,54 @@ func get_exploration_text() -> String:
 	return "探索 %d/%d" % [mini(_visited_pois.size(), total), total]
 
 
+## 正常游玩必须探索 3 处地点才能进入终点；关闭随机事件时视为封印已解。
+func get_goal_seal_required() -> int:
+	return 0 if not random_events_enabled else GOAL_SEAL_POI_COUNT
+
+
+func is_goal_seal_open() -> bool:
+	var required := get_goal_seal_required()
+	return required <= 0 or _visited_pois.size() >= required
+
+
+func get_goal_seal_text() -> String:
+	var required := get_goal_seal_required()
+	if required <= 0:
+		return ""
+	if is_goal_seal_open():
+		return "终点封印已解"
+	return "终点封印 %d/%d" % [mini(_visited_pois.size(), required), required]
+
+
+func is_goal_guard_suppressed() -> bool:
+	return _goal_guard_suppressed_round == GameManager.round_index
+
+
+## 玩家移动进入终点前调用；返回非空字符串表示应停在终点外。
+## 这是胜利判定的唯一前置闸门：必须早于 GameManager 的自动胜利分支。
+func goal_entry_block_reason() -> String:
+	if not is_goal_seal_open():
+		var required := get_goal_seal_required()
+		return "终点被封印封住：先探索 %d 处地点（当前 %d/%d），再回来。" % [
+			required, mini(_visited_pois.size(), required), required,
+		]
+	if is_goal_guard_suppressed():
+		return "守卫本回合不会再拦你，但也不会让路；下回合再来。"
+	return ""
+
+
+func goal_fail_streak() -> int:
+	return _goal_fail_streak
+
+
+func goal_withdraws_left() -> int:
+	return maxi(0, GOAL_WITHDRAW_LIMIT - _goal_withdraw_count)
+
+
+func goal_guard_dc_softening() -> int:
+	return 2 if _goal_fail_streak >= 2 else 0
+
+
 func get_events_this_run() -> int:
 	return _random_events_this_run + (1 if _goal_counted else 0)
 
@@ -399,6 +472,10 @@ func on_cell_entered(cell_id: int) -> bool:
 		entered_region = true
 
 	if is_goal and not player.goal_passed:
+		# 封印未解或本回合已退开守卫时不再弹出守卫；实际进入终点由
+		# GameManager.advance_movement() 在格边拦截，不会走到自动胜利分支。
+		if not is_goal_seal_open() or is_goal_guard_suppressed():
+			return false
 		var counted := not _goal_counted
 		if counted:
 			_goal_counted = true
@@ -664,7 +741,8 @@ func resolve_steal_item(item_id: String) -> Dictionary:
 	return _finish_resolution(choice, level, payload, applied)
 
 
-## 献祭物品通过终点守卫。
+## 献祭物品：先失去物品，再做交涉检定。物品稀有度提供加值，
+## 但不再自动通过；失败时守卫收下东西仍不让路。
 func resolve_sacrifice(item_id: String) -> Dictionary:
 	if String(_pending.get("type", "")) != "sacrifice":
 		return _error_result("当前不在献祭选择中。")
@@ -672,21 +750,36 @@ func resolve_sacrifice(item_id: String) -> Dictionary:
 	if not candidates.has(item_id):
 		return _error_result("该物品不能用于献祭。")
 	var choice := _find_choice(String(_pending.get("choice_id", "")))
-	var payload: Dictionary = _pending.get("payload", {})
 	if GameManager.player.remove_item(item_id, 1) <= 0:
 		return _error_result("物品已不在背包中。")
 	_pending.clear()
-	var applied := _apply_effects(choice.get("outcomes", {}).get("success", {}).get("effects", []))
-	var sacrifice_text := "献出 %s ×1。" % _item_name(item_id)
+	var params: Dictionary = choice.get("params", {})
+	var record := DataManager.get_record("items", item_id)
+	var rarity := String(record.get("rarity", "common"))
+	var rarity_bonus: Dictionary = params.get("rarity_bonus", {})
+	var bonus := int(rarity_bonus.get(rarity, 0))
+	var item_name := _item_name(item_id)
+	var payload := _roll_check(choice, bonus, item_name)
+	var level := String(payload.get("level", "fail"))
+	var outcome := _outcome_for(choice, level)
+	var effects: Array = []
+	for effect in outcome.get("effects", []):
+		effects.append(effect)
+	var applied := _apply_effects(effects)
+	var sacrifice_text := "献出 %s ×1。" % item_name
 	applied["messages"].push_front(sacrifice_text)
 	var costs: Array[Dictionary] = []
 	for entry in applied.get("costs", []):
 		costs.append(entry)
 	costs.push_front({"text": sacrifice_text, "kind": "item", "hint": ""})
 	applied["costs"] = costs
-	var result := _finish_resolution(choice, "success", payload, applied)
-	result["level_name"] = "守卫离开"
-	result["outcome_note"] = "守卫接过祭品，侧身让开了通往终点的路。"
+	var result := _finish_resolution(choice, level, payload, applied)
+	result["choice_text"] = "献出%s" % item_name
+	var passed := level == "success" or level == "great_success"
+	result["outcome_note"] = String(outcome.get(
+		"note",
+		"守卫收下祭品，侧身让开了通往终点的路。" if passed else "守卫收下祭品，却没有让路。"
+	))
 	return result
 
 
@@ -1056,6 +1149,12 @@ func _describe_choice(choice: Dictionary) -> Dictionary:
 		info["disabled"] = true
 		info["reason"] = "本次事件中已经使用过。"
 		return info
+	if choice_id == "withdraw" and _goal_withdraw_count >= GOAL_WITHDRAW_LIMIT:
+		info["disabled"] = true
+		info["reason"] = "守卫已经看穿你的退让，本局不能再退开。"
+		return info
+	if choice_id == "withdraw" and _goal_withdraw_count < GOAL_WITHDRAW_LIMIT:
+		info["text"] = "%s（本局剩余 %d 次）" % [String(info["text"]), goal_withdraws_left()]
 	if String(choice.get("resolution", "")) == "trade" and GameManager.player.has_flag("wanted"):
 		info["disabled"] = true
 		info["reason"] = "你已被通缉，商队拒绝交易。"
@@ -1161,10 +1260,14 @@ func _check_text(check) -> String:
 	if typeof(check) != TYPE_DICTIONARY:
 		return "无需检定"
 	var attr := String(check.get("attr", ""))
-	return "%s DC %d" % [String(ATTR_NAMES.get(attr, attr)), int(check.get("dc", 10))]
+	var dc := int(check.get("dc", 10))
+	var softening := goal_guard_dc_softening() if active_event_id == "goal_guard" else 0
+	dc = maxi(1, dc - softening)
+	var suffix := "（守卫疲惫 -%d）" % softening if softening > 0 else ""
+	return "%s DC %d%s" % [String(ATTR_NAMES.get(attr, attr)), dc, suffix]
 
 
-func _roll_check(choice: Dictionary) -> Dictionary:
+func _roll_check(choice: Dictionary, extra_bonus: int = 0, extra_label: String = "") -> Dictionary:
 	var check = choice.get("check", null)
 	if typeof(check) != TYPE_DICTIONARY:
 		return _check_payload(choice, "success", true, "")
@@ -1172,6 +1275,10 @@ func _roll_check(choice: Dictionary) -> Dictionary:
 	var natural := int(dice[0]) + int(dice[1])
 	var attr := String(check.get("attr", ""))
 	var dc := int(check.get("dc", 10))
+	var softening := 0
+	if active_event_id == "goal_guard":
+		softening = goal_guard_dc_softening()
+		dc = maxi(1, dc - softening)
 	var breakdown := GameManager.player.check_breakdown(attr)
 	var equipment_parts: Array = breakdown.get("equipment_parts", [])
 	var status_parts: Array = breakdown.get("status_parts", [])
@@ -1192,7 +1299,8 @@ func _roll_check(choice: Dictionary) -> Dictionary:
 		var trait_name := _trait_name(trait_id)
 		trait_notes.append("%s %+d" % [trait_name, bonus])
 		trait_parts.append({"id": trait_id, "name": trait_name, "value": bonus})
-	var total := natural + int(breakdown["base"]) + int(breakdown["equipment"]) + int(breakdown["status"]) + trait_bonus
+	var total := natural + int(breakdown["base"]) + int(breakdown["equipment"]) + int(breakdown["status"]) \
+		+ trait_bonus + extra_bonus
 	var level := "fail"
 	var level_name := "失败"
 	if natural == 12 or total >= dc + 5:
@@ -1208,6 +1316,20 @@ func _roll_check(choice: Dictionary) -> Dictionary:
 	var formula := GameManager.player.check_formula_text(attr, natural, attribute_name)
 	for part in trait_parts:
 		formula = ActorState.append_bonus_term(formula, int(part.get("value", 0)), String(part.get("name", "")))
+	if extra_bonus != 0:
+		formula = ActorState.append_bonus_term(formula, extra_bonus, extra_label if not extra_label.is_empty() else "额外加值")
+	if active_event_id == "goal_guard":
+		if level == "fail" or level == "great_fail":
+			_goal_fail_streak += 1
+		else:
+			_goal_fail_streak = 0
+	var note_parts: Array[String] = []
+	if softening > 0:
+		note_parts.append("守卫已连续失手两次，本次 DC -%d。" % softening)
+	if extra_bonus != 0:
+		note_parts.append("%s提供 %+d 检定加值。" % [
+			extra_label if not extra_label.is_empty() else "额外效果", extra_bonus,
+		])
 	var detail := "%s = %d vs DC %d · %s" % [formula, total, dc, level_name]
 	var payload := {
 		"check": true,
@@ -1224,12 +1346,15 @@ func _roll_check(choice: Dictionary) -> Dictionary:
 		"trait": trait_bonus,
 		"trait_notes": trait_notes,
 		"trait_parts": trait_parts,
+		"extra_bonus": extra_bonus,
+		"extra_label": extra_label,
+		"dc_softening": softening,
 		"formula": formula,
 		"total": total,
 		"dc": dc,
 		"level": level,
 		"level_name": level_name,
-		"note": "",
+		"note": " ".join(note_parts),
 	}
 	dice_rolled.emit({
 		"title": "事件检定 · %s" % attribute_name,
@@ -1237,7 +1362,8 @@ func _roll_check(choice: Dictionary) -> Dictionary:
 		"kind_label": "事件选项",
 		"dice": [int(dice[0]), int(dice[1])],
 		"sides": 6,
-		"modifier": int(breakdown["base"]) + int(breakdown["equipment"]) + int(breakdown["status"]) + trait_bonus,
+		"modifier": int(breakdown["base"]) + int(breakdown["equipment"]) + int(breakdown["status"]) \
+			+ trait_bonus + extra_bonus,
 		"total": total,
 		"dc": dc,
 		"level_name": level_name,
@@ -1431,8 +1557,9 @@ func _begin_sacrifice(choice: Dictionary, payload: Dictionary) -> Dictionary:
 	_pending = {"type": "sacrifice", "choice_id": String(choice.get("id", "")), "level": "success", "payload": sacrifice_payload, "items": candidates}
 	var result := _base_result(choice, "success", sacrifice_payload)
 	result["kind"] = "sacrifice_menu"
-	result["title"] = "选择献祭的物品"
+	result["title"] = "选择献祭的物品（稀有度提供交涉加值）"
 	result["items"] = candidates
+	result["rarity_bonus"] = params.get("rarity_bonus", {})
 	_emit_progress(result)
 	return result
 
@@ -1513,7 +1640,10 @@ func _apply_effects(effects: Array) -> Dictionary:
 	if player.hp <= 0:
 		death = true
 		_pending_death = true
-		_pending_death_reason = "你在事件中倒下。"
+		var fatal_event_name := String(active_event.get("name", active_event_id))
+		if fatal_event_name.is_empty():
+			fatal_event_name = "未知事件"
+		_pending_death_reason = "你在「%s」中倒下。" % fatal_event_name
 		player.hp = 0
 		messages.append("你倒下了。")
 		_add_cost(costs, "你倒下了。", "death")
@@ -1596,6 +1726,9 @@ func _apply_effects(effects: Array) -> Dictionary:
 				var removed_flag_text := "移除标记「%s」。" % _flag_name(removed_flag)
 				messages.append(removed_flag_text)
 				_add_reward(rewards, removed_flag_text, "flag")
+			"goal_guard_suppress":
+				_goal_guard_suppressed_round = GameManager.round_index
+				_goal_withdraw_count = mini(GOAL_WITHDRAW_LIMIT, _goal_withdraw_count + 1)
 
 	# 6. 地图揭示
 	for effect in effects:

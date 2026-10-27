@@ -18,7 +18,7 @@ const EVENT_RESOLUTIONS := ["check", "trade", "steal", "item_sacrifice", "heal_c
 const EVENT_EFFECT_TYPES := [
 	"hp", "hp_relief", "ap", "gold", "item_gain", "item_lose",
 	"status_add", "status_remove", "flag_add", "flag_remove", "reveal",
-	"ai_favor", "move", "enter_goal", "special",
+	"ai_favor", "move", "enter_goal", "goal_guard_suppress", "special",
 ]
 const OUTCOME_LEVELS := ["great_success", "success", "fail", "great_fail"]
 

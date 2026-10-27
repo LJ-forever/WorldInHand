@@ -340,7 +340,9 @@ func _build_intro_story() -> Dictionary:
 		"你是%s，一名%s。%s" % [player_name, player_role, player_lore],
 		"与你同行的，是%s，一名%s。%s你们并非偶然遇见：%s" % [companion_name, companion_role, companion_lore, reason],
 		"分开之后，她此刻在约 %d 格外的%s。荒原的视野被风沙与地形切得很碎，你未必能一直看见她。" % [distance, direction],
-		"终点是一座废弃的烽火台，传闻先到者能取走埋在台下的消息与赏金。你必须在 %d 回合内赶到。若她先到且仍与你敌对，你的胜利将不再完美；若你们同回合抵达，则算并列。" % MAX_ROUNDS,
+		"终点是一座废弃的烽火台，传闻先到者能取走埋在台下的消息与赏金。你必须在 %d 回合内赶到，并先踏足 %d 处地点解除终点封印；封印未解时，烽火台的入口不会为你打开。若她先到且仍与你敌对，你的胜利将不再完美；若你们同回合抵达，则算并列。" % [
+			MAX_ROUNDS, EventManager.GOAL_SEAL_POI_COUNT,
+		],
 	]
 	return {
 		"title": "风沙将起 · %s" % map.map_name,
@@ -573,12 +575,28 @@ func _run_companion_turn(goal_race: bool = false, defer_end_turn: bool = true) -
 			_add_world_log("%s在同一回合冲过了终点守卫，与你并列抵达。" % ai_name)
 		else:
 			_add_world_log("%s先你一步通过了终点守卫。" % ai_name)
+	if bool(report.get("theft_warning", false)):
+		var warning := "%s盯上了你的行囊：下一回合她可能下手。保持距离，或先发制人。" % ai_name
+		_add_world_log(warning)
+		_append_last_move(warning)
+		world_notice.emit(warning)
+	if String(report.get("stolen_item_id", "")) != "":
+		var stolen_name := String(report.get("stolen_item_name", "物品"))
+		var theft_notice := "%s偷走了你的「%s」。打开背包页可每回合免费追查一次；击败她也能直接取回。" % [
+			ai_name, stolen_name,
+		]
+		_add_world_log(theft_notice)
+		_append_last_move(theft_notice)
+		world_notice.emit(theft_notice)
+		inventory_changed.emit()
 	if bool(report.get("task_completed", false)):
 		var task := companion.task
 		if EventManager.get_reveal_level() >= 3 and not task.is_empty():
 			_add_world_log("%s完成了她的计划：%s。" % [ai_name, String(task.get("name", ""))])
 		else:
 			_add_world_log("%s像是了结了一桩心事。" % ai_name)
+	if bool(report.get("died", false)):
+		_return_stolen_item(String(report.get("released_stolen_item_id", "")))
 	if bool(report.get("faction_changed", false)):
 		match String(report.get("faction", "")):
 			"enemy":
@@ -1127,10 +1145,28 @@ func apply_companion_favor(delta: int) -> Dictionary:
 func mark_companion_dead(reason: String) -> void:
 	if companion == null or not companion.alive:
 		return
+	var released := companion.release_stolen_item()
 	companion.alive = false
 	companion.activity = "倒下"
 	_add_world_log("%s倒下了（%s）。" % [companion_name(), reason])
+	if not released.is_empty():
+		_return_stolen_item(released)
 	companion_changed.emit()
+
+
+## 影倒下/被击败后，把失物直接放回玩家背包；背包已满时按 A3 进入待取舍队列。
+func _return_stolen_item(item_id: String) -> void:
+	if item_id.is_empty() or player == null:
+		return
+	var item_name := String(DataManager.get_record("items", item_id).get("name", item_id))
+	var granted := grant_item(item_id, 1, "取回失物")
+	var message := "你从%s身上取回了「%s」。" % [companion_name(), item_name]
+	if bool(granted.get("queued", false)):
+		message += " 背包已满，请在背包页取舍。"
+	_add_world_log(message)
+	_append_last_move(message)
+	world_notice.emit(message)
+	inventory_changed.emit()
 
 
 ## 被困：回合结束体力检定 DC 10；失败最多再持续 1 回合。
@@ -1674,10 +1710,19 @@ func advance_movement(delta: float) -> void:
 		var entry_distance := entry_distances[_next_entry_index]
 		if target_distance + 0.0001 < entry_distance:
 			break
-		if not _advance_to_distance(entry_distance):
-			return
 		var from_id := player.cell_id
 		var to_id := path_cells[_next_entry_index]
+		# 终点封印/守卫退开：在踏入终点格之前拦截，不能依赖 on_cell_entered 返回 false，
+		# 否则下一行会自动判定胜利。这里不能先推进到入口距离，否则 visual_position
+		# 会落进终点格，而 cell_id 仍停在上一格；下回合从标记起笔时路径会被判为“太短”。
+		if to_id == map.goal_id and player != null and not player.goal_passed:
+			var goal_block := EventManager.goal_entry_block_reason()
+			if not goal_block.is_empty():
+				_advance_to_distance(maxf(move_distance, entry_distance - 0.5))
+				_stop_movement(goal_block, true)
+				return
+		if not _advance_to_distance(entry_distance):
+			return
 		player.cell_id = to_id
 		map.mark_cell_entered(to_id)
 		refresh_vision()
@@ -1880,6 +1925,11 @@ func build_run_summary_text(win: bool = false) -> String:
 	if companion != null:
 		var relation := companion_relation_text() if companion.alive else "已经倒下"
 		lines.append("同伴：%s · %s" % [companion_name(), relation])
+		var stolen_name := companion.stolen_item_name() if companion.alive else ""
+		if not stolen_name.is_empty():
+			lines.append("失物：「%s」仍在%s身上。可在背包页追查，或击败她取回。" % [
+				stolen_name, companion_name(),
+			])
 	if win:
 		lines.append("抵达终点：%s" % ("完美胜利" if player_victory_tier == "perfect" else "基础胜利"))
 	else:

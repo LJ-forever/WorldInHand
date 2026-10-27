@@ -289,11 +289,13 @@ func _show_trade_menu(result: Dictionary) -> void:
 func _show_item_menu(result: Dictionary, mode: String) -> void:
 	_clear_choices()
 	var items: Array = result.get("items", [])
+	var rarity_bonus: Dictionary = result.get("rarity_bonus", {})
 	for item_id in items:
 		var record := DataManager.get_record("items", String(item_id))
 		var label := String(record.get("name", item_id))
 		if mode == "sacrifice":
-			label = "献出 %s" % label
+			var bonus := int(rarity_bonus.get(String(record.get("rarity", "common")), 0))
+			label = "献出 %s（检定 %+d）" % [label, bonus] if bonus != 0 else "献出 %s" % label
 		else:
 			label = "偷取 %s" % label
 		var button := _make_button(label)

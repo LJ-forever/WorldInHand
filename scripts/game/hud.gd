@@ -157,6 +157,9 @@ func refresh() -> void:
 		GameManager.round_index, GameManager.MAX_ROUNDS, GameManager.get_goal_distance(),
 		EventManager.get_exploration_text(),
 	]
+	var seal_text := EventManager.get_goal_seal_text()
+	if not seal_text.is_empty():
+		round_label.text += " · " + seal_text
 	seed_label.text = "%s · 种子 %d" % [map.map_name, map.seed_value]
 	seed_label.tooltip_text = "形状种子 %d · 生成种子 %d · 本局生态种子 %d" % [
 		map.seed_value, map.generated_seed, map.terrain_seed,

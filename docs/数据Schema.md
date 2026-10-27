@@ -1,6 +1,6 @@
-# 数据 Schema（v1.8）
+# 数据 Schema（v1.9）
 
-所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
+所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.9 无新增/改名内容 JSON 字段，但新增效果类型 `goal_guard_suppress`（退开守卫），运行时与存档新增 `goal_guard_suppressed_round` / `goal_fail_streak` / `goal_withdraw_count` / `theft_warning_given`，`game_version` 升到 `1.9`、`save_version` 仍为 1；青蘅 `negotiation` 3 → 4；`goal_guard` 的 `sacrifice_item` 由自动通过改为消耗物品 + 交涉 DC 13（稀有度 +1/+2/+3），`withdraw` 增加每局 2 次上限与本回合压制。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
 
 ## 0. 通用约定
 
@@ -225,6 +225,7 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 | 伤害 | 大成功 1d6，成功 1d3；失败攻击者额外 −1 AP（不足转 HP），大失败攻击者再 −1 HP |
 | 反击 | AI 袭击后玩家可花 1 AP 反击；该 AI 本回合已经出手，反击后不再顺势攻击。玩家先手后，存活且 AP ≥1 的敌方同伴会立刻反击一次；任一方都不会因反击再次连锁 |
 | 战斗状态 | `GameManager.State.COMBAT`；`combat_payload` 含 `lines / show_choice / counter_enabled / stage`，UI 关闭后回到 `PLAYING` |
+| 终点封印 | 普通游玩先踏足 3 处不同 POI 才允许进入终点（`EventManager.GOAL_SEAL_POI_COUNT = 3`）；`random_events_enabled = false` 的调试/测试模式不启用。封印未解时移动停在终点格外，标记吸回当前格 |
 | 到达记录 | `GameManager.goal_arrivals` 记录 `{actor, name, round, faction_at_arrival, rewarded}`；每角色只记第一次 |
 | 先到奖励 | 首次到达回合的所有到达者各 +20 金币；更晚到达者无奖励 |
 | 完美胜利 | 玩家结算时任一同伴 `reached_goal` 且 `faction_at_goal == enemy` → 基础胜利；否则完美胜利 |
@@ -315,6 +316,7 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 | `ai_favor` | `value`, `target` | 同伴好感变化（MVP 目标是玩家）；跨越 ±2 时阵营切换，不受距离限制 |
 | `move` | `kind`(`knockback`/`teleport`), `value` | 击退/传送 |
 | `enter_goal` | — | 通过守卫进入终点 |
+| `goal_guard_suppress` | — | 「退开」守卫：本回合不再触发守卫、终点入口封闭到下一回合，并消耗一次本局退开额度 |
 | `special` | `id` | 需代码实现的特殊效果 |
 
 执行顺序按决策记录 **D-17** 的阶段归组，同阶段内按数组顺序。
@@ -325,7 +327,7 @@ MVP 启用：`plain` 1.2、`forest` 2.0、`desert` 2.5。其余为正式版预�
 |---|---|
 | `trade` | `offers[]`（buy/barter）、`price_multiplier_on_great_success`、`can_decline`、`trade_once_per_event`、`ai_allowed=false` |
 | `steal` | `item_choices[]`、`ai_task_aware` |
-| `item_sacrifice` | `allow_types[]`、`exclude_quest_items`、`consume_count` |
+| `item_sacrifice` | `allow_types[]`、`exclude_quest_items`、`consume_count`、`requires_any_item`、`rarity_bonus{common,uncommon,rare}`；先消耗 1 件物品，再做 `check` 指定的交涉检定，稀有度只提供加值 |
 | `heal_choice` | `options: ["hp","ap"]`、`ai_auto: "hp"` |
 
 复杂机制不塞进 JSON 表达式，一律走命名解析器；新增机制时先加解析器、再补数据。
@@ -534,7 +536,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 {
   "format": "zhenming.save",
   "save_version": 1,
-  "game_version": "1.8",
+  "game_version": "1.9",
   "saved_at": "2026-10-26T12:34:56",
   "meta": { "map_id": "borderland", "player_name": "林鸮", "round": 5, "...": "..." },
   "map": {
@@ -564,7 +566,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 |---|---|---|
 | `format` | 字符串 | 固定 `zhenming.save`；不匹配直接拒绝 |
 | `save_version` | 整数 | 当前为 `1`；结构不兼容时递增，读档不接受跨版本 |
-| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.8`，仅用于显示与排查 |
+| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.9`，仅用于显示与排查 |
 | `saved_at` | 字符串 | 本地时间 `YYYY-MM-DDTHH:MM:SS`；`meta.saved_at` 同值 |
 | `meta` | 对象 | 主菜单用摘要：地图/角色/回合/HP/金币/终点距离/同伴名，不含完整状态 |
 | `map.config` | 对象 | 本局实际生效的完整地图配置（含兜底后的参数），不是只存 `seed` |
@@ -573,8 +575,8 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 | `map.seed_value` | 整数 | HUD 展示的本局种子；读档时一并恢复 |
 | `map.fog` | 对象 | `seen` / `scouted` / `entered` / `poi_known` 四个 `cell_id` 整数数组；逐格精确保留，不从其他标记推断 |
 | `player` | 对象 | `ActorState.to_dict()`：属性、词条、装备、背包、状态、标记、HP/AP、金币、`cell_id`、休息/任务进度、AP 惩罚 |
-| `companion` | 对象 | 空对象表示本局没有同伴；否则含 `actor`（同上）、任务 ID、阵营、好感、`favor_milestones`（已领取的羁绊里程碑，如 `{"trust_supply": true}`）、`stolen_item_id`（D-25 被偷物品 ID，空串表示无失物）、`recovery_attempt_round`（最近一次免费追查的回合，防止同回合重复尝试）、存活/到达终点、当前动向、台词、最后已知位置、互动冷却、访问过的 POI 与战斗摘要 |
-| `events` | 对象 | 待处理事件队列、冷却、本回合/本行动计数、单局随机事件累计、wander 累计、已访问 POI/区域、已揭示 POI、上一地形、揭示等级、终点尝试与事件日志；区域 ID 读档时按地图重新推导 |
+| `companion` | 对象 | 空对象表示本局没有同伴；否则含 `actor`（同上）、任务 ID、阵营、好感、`favor_milestones`（已领取的羁绊里程碑，如 `{"trust_supply": true}`）、`stolen_item_id`（D-25 被偷物品 ID，空串表示无失物）、`recovery_attempt_round`（最近一次免费追查的回合，防止同回合重复尝试）、`theft_warning_given`（影是否已给出本局偷窃预警；读档后不会重复预警）、存活/到达终点、当前动向、台词、最后已知位置、互动冷却、访问过的 POI 与战斗摘要 |
+| `events` | 对象 | 待处理事件队列、冷却、本回合/本行动计数、单局随机事件累计、wander 累计、已访问 POI/区域、已揭示 POI、上一地形、揭示等级、终点尝试与事件日志；另含守卫状态 `goal_guard_suppressed_round`（本回合「退开」后压制守卫的回合号）、`goal_fail_streak`（连续失败次数，≥2 时守卫交涉/战斗 DC −2）、`goal_withdraw_count`（本局已退开次数，上限 2）；区域 ID 读档时按地图重新推导 |
 | `rng.master_seed` | 整数 | 本局主种子 |
 | `rng.streams` | 对象 | 命名随机流 → `RandomNumberGenerator.state` 的**十进制字符串**；避免 64 位整数在 JSON 中丢精度 |
 | `game` | 对象 | 回合、角色/任务 ID、世界纪事、终点到达记录与胜利层级、选中地图配置、子格视觉位置、最近提示/侦察报告、暴露回合、视野扩张格数与保持回合、`pending_item_overflows`（A3 背包满时排队的奖励，元素含 `item_id` / `count` / `source`；读档后仍要求玩家取舍） |

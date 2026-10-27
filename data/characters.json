@@ -86,14 +86,14 @@
         "perception": 5,
         "luck": 2,
         "combat": 1,
-        "negotiation": 3
+        "negotiation": 4
       },
       "traits": ["herbalist", "acrophobia"],
       "starting_equipment": [],
       "starting_items": ["potion"],
       "starting_gold": 20,
       "hidden_task_ids": ["qing_no_poison_death", "qing_share_herb", "qing_two_samples"],
-      "note": "属性总和 16；药水为消耗品，不占装备槽"
+      "note": "属性总和 17；药水为消耗品，不占装备槽"
     }
   ]
 }
