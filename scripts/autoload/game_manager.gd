@@ -1192,6 +1192,16 @@ func rest() -> void:
 func grant_item(item_id: String, count: int = 1, source: String = "") -> Dictionary:
 	if player == null or item_id.is_empty() or count <= 0:
 		return {"ok": false, "added": 0, "queued": false, "message": "当前无法获得物品。"}
+	if not DataManager.has_record("items", item_id):
+		# 未知 ID 一旦进入背包，存档能写回、读档后却无法显示或使用，造成前后不一致。
+		push_warning("拒绝授予未知物品：%s" % item_id)
+		return {
+			"ok": false,
+			"added": 0,
+			"queued": false,
+			"item_id": item_id,
+			"message": "未知物品「%s」，没有加入背包。" % item_id,
+		}
 	var item_name := player.item_display_name(item_id)
 	if not player.can_add_item(item_id):
 		var queued_count := maxi(1, count)

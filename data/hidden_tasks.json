@@ -162,8 +162,8 @@
       "character_id": "ying",
       "name": "偷走玩家关键装备",
       "relation": "sabotage",
-      "initial_faction": "enemy",
-      "initial_favor": [-5, -3],
+      "initial_faction": "neutral",
+      "initial_favor": [0, 1],
       "exclusive": true,
       "mvp_available": true,
       "completion": {
@@ -171,7 +171,7 @@
         "target": "player"
       },
       "behavior": "优先接近玩家，寻找偷窃机会",
-      "description": "偷窃检定成功，偷走玩家一件非消耗品装备；无装备则偷消耗品；再没有则失败等待。偷窃成功即完成。"
+      "description": "初始立场为中立；偷窃检定成功，偷走玩家一件非消耗品装备；无装备则偷消耗品；再没有则失败等待。成功即完成互斥任务：中立/友方得手后好感 −5 转敌，但不会立即判负，玩家可按 D-25 追回失物；若影此前已转为敌对，得手仍立即判负。任务未完成前，连续偷窃失败最多把好感压到 −2 并保持中立，避免玩家还没见到 D-25 窗口就因下一次得手直接失败。"
     },
     {
       "id": "ying_unseen",

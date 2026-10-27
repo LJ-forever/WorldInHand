@@ -60,6 +60,8 @@ const CHRONICLE_TOP_COLLAPSED := -238.0
 
 @onready var help_overlay = $HelpOverlay
 @onready var backpack_overlay = $BackpackOverlay
+@onready var bottom_bar: PanelContainer = $BottomBar
+@onready var dice_overlay = $DiceOverlay
 
 var _hovered: int = -1
 var _map_view = null
@@ -86,6 +88,8 @@ func _ready() -> void:
 	GameManager.combat_finished.connect(_on_combat_finished_for_overflow)
 	GameManager.intro_dismissed.connect(_on_intro_dismissed)
 	GameManager.scout_finished.connect(_on_scout_finished)
+	EventManager.event_started.connect(_on_event_started_clear_dice)
+	EventManager.event_progress.connect(_on_event_progress_clear_dice)
 	EventManager.event_finished.connect(_on_event_finished_for_overflow)
 
 	_map_view = get_parent().get_node_or_null("MapView")
@@ -232,6 +236,7 @@ func _on_backpack_pressed() -> void:
 	if GameManager.state != GameManager.State.PLAYING or GameManager.is_moving or GameManager.movement_paused:
 		_show_toast(GameManager.move_block_reason(), true)
 		return
+	dice_overlay.clear()
 	backpack_overlay.open()
 	_pause_for_modal()
 
@@ -251,6 +256,18 @@ func _on_modal_closed() -> void:
 
 func _on_inventory_overflow_changed() -> void:
 	call_deferred("_maybe_open_item_overflow")
+
+
+## 新事件开始时，上一场事件的骰子/AP 骰已经失效，先收起。
+func _on_event_started_clear_dice(_event: Dictionary) -> void:
+	dice_overlay.clear()
+
+
+## 无检定的选项（例如守卫献祭、退开）不会再发 dice_rolled；
+## 只有结果确实来自检定（check=true）时才保留当前骰子动画。
+func _on_event_progress_clear_dice(result: Dictionary) -> void:
+	if not bool(result.get("check", false)):
+		dice_overlay.clear()
 
 
 func _on_event_finished_for_overflow(_event_id: String) -> void:
@@ -281,6 +298,7 @@ func _maybe_open_item_overflow() -> void:
 		return
 	if backpack_overlay.visible:
 		return
+	dice_overlay.clear()
 	backpack_overlay.open()
 	_pause_for_modal()
 
@@ -372,7 +390,8 @@ func _update_companion_strip(companion_name: String) -> void:
 	else:
 		companion_activity.add_theme_color_override("font_color", Color(0.65, 0.69, 0.61))
 	var recovery_info := GameManager.stolen_item_recovery_info()
-	if bool(recovery_info.get("available", false)):
+	if GameManager.state == GameManager.State.PLAYING \
+			and bool(recovery_info.get("available", false)):
 		companion_activity.text += " · 失物可追查"
 	companion_activity.tooltip_text = "同伴独立侦察、探索、搜集物资、支援或敌对行动，不会一直跟在你身后。\n%s\n%s" % [
 		GameManager.companion_intel_text(), ATTACK_HELP,
@@ -597,6 +616,9 @@ func _on_game_over(win: bool, reason: String) -> void:
 	toast_panel.visible = false
 	help_overlay.visible = false
 	backpack_overlay.visible = false
+	# 结算页接管输入后，底栏里的动作/失物提示与残留骰子都不应继续可见。
+	bottom_bar.visible = false
+	dice_overlay.clear()
 	if _modal_paused:
 		get_tree().paused = false
 		_modal_paused = false

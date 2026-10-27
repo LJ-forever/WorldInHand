@@ -1,6 +1,6 @@
-# 数据 Schema（v1.7）
+# 数据 Schema（v1.8）
 
-所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
+所有内容数据位于 `res://data/`，UTF-8 JSON。改数据不需要改代码；改字段结构才需要同步本文件。v1.8 无新增/改名 JSON 字段；修正阵营阈值口径为 `favor ≤ −3` 敌方、`favor ≥ +3` 友方（§11.3），影的偷窃任务改为初始中立并在任务完成前限制失败好感下限，另新增单段移动成本 3 AP 上限与终点守卫「退开」选项（`goal_guard` 的 `withdraw`，字段仍沿用既有 `choices` 结构）。v1.7 完成 P0 收口：存档新增 `companion.stolen_item_id` / `companion.recovery_attempt_round`（D-25 被偷物品与最近追查回合）和 `game.pending_item_overflows`（A3 背包满时待取舍的奖励队列），三者都必须原样跨读档保留；内容 JSON 字段不变。v1.6 补充正反馈闭环：事件结算新增运行时 `reward_entries` / `cost_entries` / `insight_entries` 三类摘要，`supply` / `potion` 的 `effects.use` 接入背包直接使用，POI 首次踏足额外发放保底发现奖励并显示探索进度，同伴 `favor_milestones` 随存档持久化；内容 JSON 字段不变。v1.5 补充平衡统计口径：POI 首次进入必定触发、区域首次进入 60%、wander 每 3 AP 13% 加每回合 24% 环境判定、单局随机事件上限 29；地图配置新增仅测试用的 `fixed_terrain_seed`，并明确 AI 袭击后的玩家反击不会触发二次反击。v1.3 新增单槽自动存档 `user://saves/auto.json` 的格式说明（§9.3，`save_version = 1`），并在存档中保存地图配置/实际种子、角色与同伴运行时状态、事件编排、迷雾标记与 RNG 流；内容 JSON 字段不变。v1.2 未新增 JSON 字段，但移动 AP 改为按实际路径距离连续计算：`MapData.segment_move_cost_deci()` 使用世界像素距离、目标格地形系数与 `elevation_at` 起止高差，不再读取地块面积；事件选项在选择前只返回 `risk` / `disabled` / `reason`，不再生成 `hint` / `warning`，实际收益与损失只通过选择后的 `effect_messages` 揭示。v1.1 调整 UI 与地图生成口径：迷雾改为地形底色 + 未知/记忆覆盖层的分层渲染，起终点从内陆候选点生成，单局约 279 块，新增开场白、右上帮助、背包/装备页与骰子动画；v0.9 接入 AI 同伴完整回合与 4X 式事件编排：`hidden_tasks.json` 的 `initial_faction` / `initial_favor` / `completion` 驱动 AI 意图，事件结果中的 `ai_effects` / `ai_favor` 接入结算，并补充事件情境权重与同伴情报口径；v0.8 补齐分层迷雾三态、侦察检定与 AI 揭示等级的运行时口径（不新增 JSON 字段），并接入隐藏任务的运行时分配：玩家侧只记录候选、AI 侧抽取任务，修正了把 AI 任务误当玩家目标展示的问题；v0.7 只保留一张内置地图，并新增 `randomize_seed`：每次开局重掷形状种子，整张地图内容重新生成；v0.6 让地图 JSON 通过 `character_ids` / `event_ids` 声明本图内容清单；v0.5 将地块放大到约 1.65 倍，补充移动 AP 与单次移动 2 事件/3 AP 间隔口径，并新增 3 个 wander 事件；v0.4 补全事件触发、`hp_relief` 与 `lost_severe`；v0.3 补充地图配置、运行时派生地块字段与 `cell_id` 约定。
 
 ## 0. 通用约定
 
@@ -534,7 +534,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 {
   "format": "zhenming.save",
   "save_version": 1,
-  "game_version": "1.7",
+  "game_version": "1.8",
   "saved_at": "2026-10-26T12:34:56",
   "meta": { "map_id": "borderland", "player_name": "林鸮", "round": 5, "...": "..." },
   "map": {
@@ -564,7 +564,7 @@ POI 首次踏足保底奖励由 `EventManager._grant_poi_discovery()` 发放：�
 |---|---|---|
 | `format` | 字符串 | 固定 `zhenming.save`；不匹配直接拒绝 |
 | `save_version` | 整数 | 当前为 `1`；结构不兼容时递增，读档不接受跨版本 |
-| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.7`，仅用于显示与排查 |
+| `game_version` | 字符串 | 写入时的游戏版本，当前 `1.8`，仅用于显示与排查 |
 | `saved_at` | 字符串 | 本地时间 `YYYY-MM-DDTHH:MM:SS`；`meta.saved_at` 同值 |
 | `meta` | 对象 | 主菜单用摘要：地图/角色/回合/HP/金币/终点距离/同伴名，不含完整状态 |
 | `map.config` | 对象 | 本局实际生效的完整地图配置（含兜底后的参数），不是只存 `seed` |

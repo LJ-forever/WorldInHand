@@ -536,6 +536,12 @@ func _choose_intent(map: MapData, player: ActorState) -> String:
 			return "goal"
 		_:
 			match task_type:
+				"steal_equipment":
+					# 影偷装备的任务初始为中立：她仍会主动接近玩家寻找机会，
+					# 得手后才好感 −5 转敌，让 D-25 的失物追回真正可达。
+					if not _task_completed:
+						return "hunt"
+					return "goal"
 				"reveal_goal_first":
 					if _task_completed or _task_failed:
 						return "goal"
@@ -932,7 +938,14 @@ func _try_steal(player: ActorState) -> void:
 	var roll := _roll_2d6() + (2 if actor.has_trait("thief") else 0)
 	var dc := 8 + player.perception() + player.equipment_defense_bonus()
 	if roll < dc:
+		var was_neutral := faction == "neutral"
 		_change_favor(-2)
+		# D-25 保护窗口：任务尚未完成时，连续失败不应把影从中立直接推成敌方，
+		# 否则她第一次得手就会立即判负，失物追回永远不会出现。
+		# 其他来源（事件、援助、任务完成）仍可正常把她转为敌对。
+		if was_neutral and not _task_completed and faction == "enemy":
+			favor = maxi(favor, -2)
+			faction = "neutral"
 		activity = "若无其事地走开"
 		last_action = "你察觉到%s的手伸向行囊，及时避开了。" % _name()
 		return
@@ -1182,9 +1195,12 @@ func _change_favor(delta: int) -> Dictionary:
 
 
 func _faction_from_favor() -> String:
-	if favor >= 2:
+	# 设计 §11.3：友好度 ≥ +3 才转友方，≤ −3 才转敌方；
+	# −2～+2 都是中立。影偷窃失败只降 2 点好感，初始 0/1 时
+	# 仍应保持中立，不能因为一次失败就提前敌对并让下一次得手直接判负。
+	if favor >= 3:
 		return "friendly"
-	if favor <= -2:
+	if favor <= -3:
 		return "enemy"
 	return "neutral"
 
@@ -1272,8 +1288,11 @@ func _complete_exclusive_task(defeat_reason: String) -> Dictionary:
 		result["defeat_reason"] = defeat_reason
 	else:
 		var change := _change_favor(-5)
+		# 设计 §11.4：达成互斥目标后“友好度 −5，转为敌方”是强制结果。
+		# 高好感角色扣到 −2 时按普通阈值仍是中立，这里必须显式转敌。
+		faction = "enemy"
 		result["favor_changed"] = bool(change.get("favor_changed", false))
-		result["faction_changed"] = bool(change.get("faction_changed", false))
+		result["faction_changed"] = faction != faction_before
 		result["faction"] = faction
 		result["favor"] = favor
 	return result

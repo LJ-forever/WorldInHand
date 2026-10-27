@@ -4,7 +4,7 @@ extends Node
 ##
 ## 存档格式：
 ## {
-##   "format": "zhenming.save", "save_version": 1, "game_version": "1.7",
+##   "format": "zhenming.save", "save_version": 1, "game_version": "1.8",
 ##   "saved_at": "...", "meta": {...},
 ##   "map": {config, generated_seed, terrain_seed, seed_value, fog},
 ##   "player": {...}, "companion": {...}, "events": {...}, "game": {...}, "rng": {...}
@@ -14,7 +14,7 @@ const SAVE_DIR := "user://saves"
 const SAVE_FORMAT := "zhenming.save"
 ## 结构不兼容时递增；读档只接受完全相同的版本。
 const SAVE_VERSION := 1
-const GAME_VERSION := "1.7"
+const GAME_VERSION := "1.8"
 const DEFAULT_SLOT := "auto"
 
 var last_error: String = ""

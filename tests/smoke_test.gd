@@ -10,6 +10,7 @@ func _ready() -> void:
 	# 测试中不等待战斗面板输入；需要 UI 的分支单独断言状态机。
 	GameManager.combat_interactive = false
 	_test_map_generation()
+	_test_segment_cost_cap()
 	_test_drawing_and_animated_move()
 	_test_continuous_distance_ap()
 	_test_ap_exhaustion()
@@ -109,12 +110,14 @@ func _test_map_generation() -> void:
 	var probe_a := start_cell.center
 	var probe_b := start_cell.center + Vector2(12.0, 0.0)
 	var short_cost := map.segment_move_cost_deci(probe_a, probe_b, map.start_id, map.start_id, null)
+	var medium_cost := map.segment_move_cost_deci(probe_a, probe_a + Vector2(24.0, 0.0), map.start_id, map.start_id, null)
 	var long_cost := map.segment_move_cost_deci(probe_a, probe_a + Vector2(48.0, 0.0), map.start_id, map.start_id, null)
-	print("  distance costs: 12px=%.1f 48px=%.1f rate=%.2f deci/px" % [
-		short_cost, long_cost, map.movement_rate_deci_per_pixel(map.start_id, null),
+	print("  distance costs: 12px=%.1f 24px=%.1f 48px=%.1f rate=%.2f deci/px" % [
+		short_cost, medium_cost, long_cost, map.movement_rate_deci_per_pixel(map.start_id, null),
 	])
 	_check(map.movement_rate_deci_per_pixel(map.start_id, null) > 0.0, "terrain provides a positive movement rate")
-	_check(long_cost > short_cost * 3.0, "AP cost grows with actual path distance")
+	_check(medium_cost > short_cost * 1.5, "AP cost grows with actual path distance")
+	_check(long_cost <= MapData.MAX_SEGMENT_COST_DECI + 0.01, "long path samples stay within the single-segment cap")
 	_check(is_equal_approx(map.segment_move_cost_deci(probe_a, probe_a, map.start_id, map.start_id, null), 0.0), "zero-length movement is free")
 	var uphill_pair: Array[int] = [-1, -1]
 	for cell in map.cells:
@@ -219,6 +222,62 @@ func _test_map_generation() -> void:
 		if _west_east_gradient_score(roll) < 0.20:
 			weak_gradient_rolls += 1
 	_check(weak_gradient_rolls == 0, "directional gradient holds across several biome rolls")
+
+
+## 复核回归：AI 用相邻地块中心点的直线近似成本，陡坡长边可能超过
+## 低 AP 角色整回合的 AP，导致 AI 每回合都判定“走不起”而永久停在原地。
+## 单段成本必须封顶，保证任意一条相邻边都能在下一回合迈出。
+func _test_segment_cost_cap() -> void:
+	print("-- steep segment cost cap --")
+	var configs := MapConfigLoader.list_configs()
+	if configs.is_empty():
+		_check(false, "segment cap test config exists")
+		return
+	var map := MapGenerator.generate_exact(configs[0], 1038328, 3457048)
+	_check(map != null and not map.cells.is_empty(), "reported deadlock seed regenerates")
+	if map == null:
+		return
+	var worst_capped := 0.0
+	var worst_capped_info := ""
+	var worst_raw := 0.0
+	var worst_raw_info := ""
+	var edges := 0
+	for cell in map.cells:
+		for neighbor_id in cell.neighbors:
+			if neighbor_id <= cell.id:
+				continue
+			var other := map.get_cell(neighbor_id)
+			if other == null:
+				continue
+			edges += 1
+			var capped := map.move_cost_deci(cell.id, neighbor_id, null)
+			if capped > worst_capped:
+				worst_capped = capped
+				worst_capped_info = "cell %d->%d %.2f AP" % [cell.id, neighbor_id, capped / 10.0]
+			# 复算封顶前的中心点近似成本，确认这个种子确实包含超预算边。
+			var raw := cell.center.distance_to(other.center) \
+				* map.movement_rate_deci_per_pixel(neighbor_id, null)
+			var climb := map.elevation_at(neighbor_id, other.center) \
+				- map.elevation_at(cell.id, cell.center)
+			if climb > 0.0:
+				raw += climb * MapData.UPHILL_AP_DECI_PER_ELEVATION
+			if raw > worst_raw:
+				worst_raw = raw
+				worst_raw_info = "cell %d->%d %.2f AP" % [cell.id, neighbor_id, raw / 10.0]
+	print("  adjacent edges=%d raw worst=%.2f AP (%s), capped worst=%.2f AP (%s), cap=%.1f AP" % [
+		edges, worst_raw / 10.0, worst_raw_info,
+		worst_capped / 10.0, worst_capped_info, MapData.MAX_SEGMENT_COST_DECI / 10.0,
+	])
+	_check(edges > 0, "the reported seed has adjacent edges to scan")
+	_check(worst_raw > MapData.MAX_SEGMENT_COST_DECI, "reported seed contains an edge above the cap before clamping")
+	_check(worst_capped <= MapData.MAX_SEGMENT_COST_DECI + 0.01, "every adjacent-cell edge is clamped to the cap")
+	var lowest_ap := 99
+	for record in DataManager.all_records("characters"):
+		var character: Dictionary = record
+		var actor := ActorState.from_character(character)
+		lowest_ap = mini(lowest_ap, 1 + actor.speed())
+	print("  slowest character minimum AP = %d" % lowest_ap)
+	_check(MapData.MAX_SEGMENT_COST_DECI <= float(lowest_ap * 10), "the cap is affordable by the slowest character")
 
 
 func _test_drawing_and_animated_move() -> void:
@@ -813,13 +872,19 @@ func _test_event_system() -> void:
 	_check(player.gold > gold_before_decline, "stealing also grants the configured gold")
 	EventManager.finish_event()
 
-	# 终点守卫献祭：消耗装备/背包物品并直接进入终点。
+	# 终点守卫：献祭直接通过；另有无需检定的「退开」出口，避免无物品时只能反复掉血。
 	var goal_choice: Dictionary = {}
+	var withdraw_choice: Dictionary = {}
 	var goal_event: Dictionary = DataManager.get_record("events", "goal_guard")
 	for raw_choice in goal_event.get("choices", []):
 		var choice: Dictionary = raw_choice
 		if String(choice.get("id", "")) == "sacrifice_item":
 			goal_choice = choice
+		elif String(choice.get("id", "")) == "withdraw":
+			withdraw_choice = choice
+	_check(not withdraw_choice.is_empty(), "goal guard offers a withdrawal choice")
+	_check(withdraw_choice.get("check", null) == null, "withdrawal requires no check")
+	_check(not bool(withdraw_choice.get("ai_allowed", true)), "AI does not pick the withdrawal shortcut")
 	player.goal_passed = false
 	player.inventory.clear()
 	player.add_item("supply", 1)
@@ -834,6 +899,25 @@ func _test_event_system() -> void:
 	_check(bool(sacrifice_outcome.get("goal", false)), "sacrifice passes the goal guard")
 	player.goal_passed = false
 	EventManager.finish_event()
+
+	# 退开：自动成功、不扣 HP、退回 1 格，且不通过终点。
+	var guard_map := GameManager.map
+	var guard_cell := int(guard_map.neighbors_of(guard_map.goal_id)[0])
+	var restore_cell := player.cell_id
+	var restore_position := GameManager.visual_position
+	player.cell_id = guard_cell
+	GameManager.visual_position = guard_map.cell_center(guard_cell)
+	var guard_hp := player.hp
+	EventManager.debug_start_event("goal_guard")
+	var withdraw_result := EventManager.choose_choice("withdraw")
+	_check(not bool(withdraw_result.get("check", true)), "withdrawal resolves without a dice check")
+	_check(String(withdraw_result.get("level_name", "")) == "自动成功", "withdrawal is reported as an automatic success")
+	_check(player.hp == guard_hp, "withdrawal costs no HP")
+	_check(player.cell_id != guard_cell and player.cell_id != guard_map.goal_id, "withdrawal retreats one cell away from the goal")
+	_check(not bool(withdraw_result.get("enter_goal", true)), "withdrawal does not enter the goal")
+	EventManager.finish_event()
+	player.cell_id = restore_cell
+	GameManager.visual_position = restore_position
 
 	# 效果顺序：死亡检查早于物品/状态/标记。
 	player.inventory.clear()
@@ -1047,8 +1131,27 @@ func _test_game_scene() -> void:
 			var dice_summary: Label = dice_overlay.get_node_or_null("Banner/Center/Panel/Margin/VBox/DiceRow/SummaryLabel")
 			_check(dice_box != null and dice_box.get_child_count() == 2, "2d6 checks show two dice")
 			_check(dice_summary != null and "DC 9" in dice_summary.text and "成功" in dice_summary.text, "dice overlay explains modifier, total and DC")
-			dice_overlay._token += 1
-			dice_overlay.visible = false
+			dice_overlay.clear()
+			_check(not dice_overlay.visible, "dice overlay can be cleared explicitly")
+			dice_overlay.show_roll({
+				"title": "上一条检定", "dice": [3, 4], "sides": 6,
+				"total": 7, "dc": 10, "level_name": "失败",
+			})
+			hud._on_event_started_clear_dice({})
+			_check(not dice_overlay.visible, "starting a new event clears the previous event's dice")
+			dice_overlay.show_roll({
+				"title": "上一条检定", "dice": [3, 4], "sides": 6,
+				"total": 7, "dc": 10, "level_name": "失败",
+			})
+			hud._on_event_progress_clear_dice({"check": false})
+			_check(not dice_overlay.visible, "a no-check event result clears the old dice")
+			dice_overlay.show_roll({
+				"title": "真实检定", "dice": [5, 6], "sides": 6,
+				"total": 11, "dc": 10, "level_name": "成功",
+			})
+			hud._on_event_progress_clear_dice({"check": true})
+			_check(dice_overlay.visible, "a real dice check stays visible while its result is shown")
+			dice_overlay.clear()
 		var name_label: Label = hud.get_node_or_null("TopBar/Margin/HBox/NameLabel")
 		_check(name_label != null and GameManager.player.display_name in name_label.text, "HUD shows character name")
 		var seed_label: Label = hud.get_node_or_null("TopBar/Margin/HBox/SeedLabel")
@@ -1465,6 +1568,25 @@ func _test_game_scene() -> void:
 		_check(GameManager.path_cells.size() >= 2, "mouse drag creates a drawn path")
 		_check(GameManager.player.ap_deci == ap_before, "drawing does not deduct AP")
 		GameManager.clear_drawn_path()
+
+	# 结算页接管后，底栏（含「失物可追查」）与残留骰子都不应继续可见。
+	if hud != null:
+		var result_dice_overlay: Control = hud.get_node_or_null("DiceOverlay")
+		var result_overlay: Control = hud.get_node_or_null("ResultOverlay")
+		if result_dice_overlay != null:
+			result_dice_overlay.show_roll({
+				"title": "残留检定", "dice": [2, 2], "sides": 6,
+				"total": 4, "dc": 9, "level_name": "失败",
+			})
+		hud._on_game_over(false, "测试结算")
+		await get_tree().process_frame
+		var bottom_bar_after: Control = hud.get_node_or_null("BottomBar")
+		_check(bottom_bar_after != null and not bottom_bar_after.visible, "result screen hides the bottom action bar and its stale prompts")
+		_check(result_dice_overlay != null and not result_dice_overlay.visible, "result screen clears any leftover dice overlay")
+		if result_overlay != null:
+			result_overlay.visible = false
+		if bottom_bar_after != null:
+			bottom_bar_after.visible = true
 	scene.queue_free()
 	await get_tree().process_frame
 
@@ -2367,6 +2489,50 @@ func _test_p0_exclusive_tasks() -> void:
 	var player := GameManager.player
 	var beside := int(map.neighbors_of(player.cell_id)[0])
 
+	# 影的偷窃任务初始为中立：她会主动寻找偷窃机会，但首次得手不立即判负，
+	# 让 D-25 的失物追回在正常开局中真正可达。
+	var theft_task := DataManager.get_record("hidden_tasks", "ying_steal_gear")
+	_check(String(theft_task.get("initial_faction", "")) == "neutral", "Ying's theft task data starts neutral")
+	var default_thief := CompanionAI.new()
+	_check(default_thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "default thief setup succeeds")
+	_check(default_thief.faction == "neutral", "default thief starts neutral")
+	_check(default_thief._choose_intent(map, player) == "hunt", "neutral thief still hunts for a theft opportunity")
+
+	# 设计 §11.3 的阵营阈值：−2～+2 中立，±3 才切换。
+	var threshold_probe := CompanionAI.new()
+	threshold_probe.favor = 2
+	_check(threshold_probe._faction_from_favor() == "neutral", "favor +2 is still neutral")
+	threshold_probe.favor = 3
+	_check(threshold_probe._faction_from_favor() == "friendly", "favor +3 turns friendly")
+	threshold_probe.favor = -2
+	_check(threshold_probe._faction_from_favor() == "neutral", "favor −2 is still neutral")
+	threshold_probe.favor = -3
+	_check(threshold_probe._faction_from_favor() == "enemy", "favor −3 turns enemy")
+
+	# 一次偷窃失败只到 −2，不应提前敌对；否则下一次得手会立即判负，
+	# D-25 的追回窗口在正常开局里几乎不会出现。
+	var neutral_fail := CompanionAI.new()
+	_check(neutral_fail.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "neutral failing thief setup succeeds")
+	neutral_fail.faction = "neutral"
+	neutral_fail.favor = 0
+	player.attributes["perception"] = 100
+	player.equipment.clear()
+	player.inventory.clear()
+	player.equipment.append("bandit_blade")
+	neutral_fail._try_steal(player)
+	_check(neutral_fail.favor == -2 and neutral_fail.faction == "neutral", "one failed theft leaves the thief neutral")
+	_check(not neutral_fail._task_completed and player.has_item("bandit_blade"), "the first failure keeps the theft task open for D-25")
+	neutral_fail._try_steal(player)
+	_check(neutral_fail.favor == -2 and neutral_fail.faction == "neutral", "repeated failures cannot skip the D-25 recovery window")
+	player.attributes["perception"] = -100
+	neutral_fail._try_steal(player)
+	_check(neutral_fail._task_completed and neutral_fail.faction == "enemy", "the first success after repeated failures still completes the task")
+	_check(not neutral_fail._player_defeated and String(neutral_fail._stolen_item_id) == "bandit_blade", "that success opens recovery instead of ending the run")
+	player.attributes["perception"] = 0
+	player.equipment.clear()
+	player.inventory.clear()
+	player.equipment.append("bandit_blade")
+
 	# 影：武器/饰品优先，成功即完成；敌方时立即判负。
 	var thief := CompanionAI.new()
 	_check(thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", beside, RNGManager.get_stream("ai")), "thief setup succeeds")
@@ -2610,10 +2776,19 @@ func _test_inventory_overflow_and_recovery() -> void:
 	player.inventory.clear()
 	GameManager.pending_item_overflows.clear()
 
+	# 未知物品 ID 必须在入口被拒绝，不能进入背包或溢出队列。
+	var inventory_before_invalid := player.inventory.duplicate()
+	var invalid_item := GameManager.grant_item("not_a_real_item", 1, "测试")
+	_check(not bool(invalid_item.get("ok", true)) and not bool(invalid_item.get("queued", true)), "unknown item IDs are rejected")
+	_check(player.inventory == inventory_before_invalid and not GameManager.has_pending_item_overflow(), "rejected items change neither inventory nor overflow queue")
+
 	# A3：8 格满后，第九件不同物品先排队；同种物品仍可叠加。
 	for item_id in ["supply", "potion", "herb", "mount", "pelt", "ancient_coin", "rare_charm", "telescope"]:
 		player.add_item(item_id, 1)
 	_check(player.inventory_slot_count() == ActorState.INVENTORY_SLOT_LIMIT, "A3 test fills all 8 backpack slots")
+	var invalid_when_full := GameManager.grant_item("not_a_real_item", 1, "测试")
+	_check(not bool(invalid_when_full.get("ok", true)) and not bool(invalid_when_full.get("queued", true)), "unknown item IDs are rejected even when the backpack is full")
+	_check(not GameManager.has_pending_item_overflow(), "rejected unknown items never enter the overflow queue")
 	var stacked := GameManager.grant_item("potion", 2, "测试")
 	_check(bool(stacked.get("ok", false)) and not bool(stacked.get("queued", true)), "a stacked consumable is accepted at 8 slots")
 	_check(player.item_count("potion") == 3 and player.inventory_slot_count() == 8, "stacking does not consume another slot")
@@ -2643,8 +2818,7 @@ func _test_inventory_overflow_and_recovery() -> void:
 	player.attributes["perception"] = -100
 	var thief := CompanionAI.new()
 	_check(thief.setup(DataManager.get_record("characters", "ying"), "ying_steal_gear", int(map.neighbors_of(player.cell_id)[0]), RNGManager.get_stream("ai")), "integration thief setup succeeds")
-	thief.faction = "neutral"
-	thief.favor = 0
+	_check(thief.faction == "neutral", "theft task starts neutral so its first success is recoverable")
 	GameManager.companion = thief
 	thief._try_steal(player)
 	_check(thief.has_stolen_item() and not player.has_item("bandit_blade"), "neutral theft transfers the equipment to the thief")

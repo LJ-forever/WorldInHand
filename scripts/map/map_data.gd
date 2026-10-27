@@ -372,6 +372,12 @@ const BASE_MOVE_AP_PER_PIXEL_DECI := 0.35
 ## 爬升 1 层高程的额外消耗；下坡不返还 AP，避免来回刷高度。
 const UPHILL_AP_DECI_PER_ELEVATION := 10.0
 const ROPE_UPHILL_MULTIPLIER := 0.5
+## 单段路径的硬上限（3 AP）。AI 用相邻地块中心点的直线近似成本，
+## 在陡坡或长边上会算出超过低 AP 角色整回合的消耗（复现种子最坏 9.5 AP），
+## 导致 AI 每回合都判定“走不起”而永久停在原地。玩家虽然按实际笔迹连续扣 AP，
+## 也共用该上限，避免单次采样把多回合预算压进一小段路。
+## 3 AP 等于全角色最低单回合 AP，保证每回合至少能跨过一段。
+const MAX_SEGMENT_COST_DECI := 30.0
 
 
 ## 地形移动系数；密林/沙漠等更难走的地形会让每像素消耗更高。
@@ -413,7 +419,8 @@ func segment_move_cost_deci(
 		if actor != null and actor.has_equipment("rope"):
 			uphill *= ROPE_UPHILL_MULTIPLIER
 		cost += uphill
-	return maxf(cost, 0.0)
+	# 玩家与 AI 共用同一上限：AI 的近似中心点成本也不会高估到无法迈出一步。
+	return clampf(cost, 0.0, MAX_SEGMENT_COST_DECI)
 
 
 ## AI/可达性使用的近似成本：把相邻地块中心之间的直线当作一次移动。

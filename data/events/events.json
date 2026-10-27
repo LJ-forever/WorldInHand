@@ -658,6 +658,25 @@
           }
         },
         {
+          "id": "withdraw",
+          "text": "退开",
+          "check": null,
+          "resolution": "check",
+          "ai_allowed": false,
+          "outcomes": {
+            "success": {
+              "effects": [
+                {
+                  "type": "move",
+                  "kind": "knockback",
+                  "value": 1
+                }
+              ],
+              "note": "不检定、不损失 HP；退回 1 格。可补给后再来，或改走其他路线。"
+            }
+          }
+        },
+        {
           "id": "sacrifice_item",
           "text": "使用物品",
           "check": null,

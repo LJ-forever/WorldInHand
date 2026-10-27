@@ -43,6 +43,8 @@ const INTENT_TARGET_RANGES := {
 	"dead": [0.0, 0.0],
 }
 ## 隐藏任务决定意图，所以按阵营分别检查：友好偏支援、中立偏休息/争胜、敌对偏追击。
+## 影的偷窃任务在未完成时即使中立也会主动 hunt；得手转敌后又会继续袭击。
+## 因此中立 hunt 与敌方 attack 的上界按任务语义放宽，不把任务驱动误判成异常。
 const FACTION_INTENT_TARGET_RANGES := {
 	"friendly": {
 		"support": [0.50, 0.75],
@@ -55,17 +57,17 @@ const FACTION_INTENT_TARGET_RANGES := {
 	},
 	"neutral": {
 		"rest": [0.30, 0.60],
-		"goal": [0.25, 0.45],
-		"explore": [0.05, 0.20],
+		"goal": [0.15, 0.45],
+		"explore": [0.05, 0.30],
 		"scout": [0.0, 0.05],
 		"support": [0.0, 0.05],
-		"hunt": [0.0, 0.02],
+		"hunt": [0.05, 0.25],
 		"attack": [0.0, 0.02],
 	},
 	"enemy": {
 		"hunt": [0.45, 0.75],
-		"goal": [0.10, 0.25],
-		"attack": [0.05, 0.15],
+		"goal": [0.05, 0.25],
+		"attack": [0.05, 0.20],
 		"rest": [0.0, 0.15],
 		"support": [0.0, 0.02],
 		"explore": [0.0, 0.05],

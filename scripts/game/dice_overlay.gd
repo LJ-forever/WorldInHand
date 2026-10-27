@@ -15,6 +15,7 @@ const HOLD_SECONDS := 1.55
 
 var _token: int = 0
 var _faces: Array[DiceFace] = []
+var _tweens: Array[Tween] = []
 var _cosmetic_rng := RandomNumberGenerator.new()
 
 
@@ -32,6 +33,7 @@ func show_roll(payload: Dictionary) -> void:
 		return
 	_token += 1
 	var token := _token
+	_kill_tweens()
 	visible = true
 	modulate = Color(1, 1, 1, 1)
 	title_label.text = String(payload.get("title", "检定"))
@@ -43,6 +45,7 @@ func show_roll(payload: Dictionary) -> void:
 	banner.pivot_offset = banner.size * 0.5
 	banner.scale = Vector2(0.96, 0.96)
 	var tween := create_tween()
+	_track_tween(tween)
 	tween.tween_property(banner, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 	var sides := int(payload.get("sides", 6))
@@ -58,6 +61,7 @@ func show_roll(payload: Dictionary) -> void:
 		_faces[i].value = int(dice[i])
 	summary_label.text = _summary_text(payload)
 	var settle := create_tween()
+	_track_tween(settle)
 	settle.tween_property(banner, "scale", Vector2(1.035, 1.035), 0.09)
 	settle.tween_property(banner, "scale", Vector2.ONE, 0.12)
 
@@ -65,10 +69,33 @@ func show_roll(payload: Dictionary) -> void:
 	if token != _token:
 		return
 	var fade := create_tween()
+	_track_tween(fade)
 	fade.tween_property(self, "modulate:a", 0.0, 0.28)
-	await fade.finished
-	if token == _token:
-		visible = false
+	fade.tween_callback(func() -> void:
+		if token == _token:
+			visible = false
+			modulate.a = 1.0
+	)
+
+
+## 立即收起骰子条。事件开始、无骰子选项、结算与背包遮挡时调用，
+## 避免上一条检定继续停留在新界面后面。
+func clear() -> void:
+	_token += 1
+	_kill_tweens()
+	modulate = Color(1, 1, 1, 1)
+	visible = false
+
+
+func _track_tween(tween: Tween) -> void:
+	_tweens.append(tween)
+
+
+func _kill_tweens() -> void:
+	for tween in _tweens:
+		if tween != null and tween.is_valid():
+			tween.kill()
+	_tweens.clear()
 
 
 func _build_faces(count: int) -> void:
